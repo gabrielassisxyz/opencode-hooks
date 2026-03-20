@@ -112,12 +112,11 @@ describe("createHooksRuntime", () => {
       [
         "session.idle",
         [
-          {
-            event: "session.idle",
+          createHook("session.idle", {
             conditions: ["hasCodeChange"],
             actions: [{ bash: "hook" }],
             source: { filePath: "a", index: 0 },
-          },
+          }),
         ],
       ],
     ])
@@ -190,9 +189,9 @@ describe("createHooksRuntime", () => {
     })
 
     const hooks: HookMap = new Map([
-      [["file.changed" as const][0], [{ event: "file.changed", actions: [{ bash: "hook" }], source: { filePath: "a", index: 0 } }]],
-      [["tool.after.patch" as const][0], [{ event: "tool.after.patch", actions: [{ bash: "hook" }], source: { filePath: "a", index: 1 } }]],
-      [["tool.after.apply_patch" as const][0], [{ event: "tool.after.apply_patch", actions: [{ bash: "hook" }], source: { filePath: "a", index: 2 } }]],
+      [["file.changed" as const][0], [createHook("file.changed", { actions: [{ bash: "hook" }], source: { filePath: "a", index: 0 } })]],
+      [["tool.after.patch" as const][0], [createHook("tool.after.patch", { actions: [{ bash: "hook" }], source: { filePath: "a", index: 1 } })]],
+      [["tool.after.apply_patch" as const][0], [createHook("tool.after.apply_patch", { actions: [{ bash: "hook" }], source: { filePath: "a", index: 2 } })]],
     ])
 
     const runtime = createHooksRuntime(input as never, { hooks, executeBash })
@@ -284,12 +283,11 @@ describe("createHooksRuntime", () => {
       [
         "session.idle",
         [
-          {
-            event: "session.idle",
+          createHook("session.idle", {
             conditions: ["hasCodeChange"],
             actions: [{ bash: "hook" }],
             source: { filePath: "a", index: 0 },
-          },
+          }),
         ],
       ],
     ])
@@ -372,12 +370,11 @@ describe("createHooksRuntime", () => {
       [
         "session.idle",
         [
-          {
-            event: "session.idle",
+          createHook("session.idle", {
             conditions: ["hasCodeChange"],
             actions: [{ bash: "hook" }],
             source: { filePath: "a", index: 0 },
-          },
+          }),
         ],
       ],
     ])
@@ -418,8 +415,8 @@ describe("createHooksRuntime", () => {
     }))
 
     const hooks: HookMap = new Map([
-      ["tool.before.*", [{ event: "tool.before.*", actions: [{ bash: "hook" }], source: { filePath: "a", index: 0 } }]],
-      [["tool.after.write" as const][0], [{ event: "tool.after.write", actions: [{ bash: "hook" }], source: { filePath: "a", index: 1 } }]],
+      ["tool.before.*", [createHook("tool.before.*", { actions: [{ bash: "hook" }], source: { filePath: "a", index: 0 } })]],
+      [["tool.after.write" as const][0], [createHook("tool.after.write", { actions: [{ bash: "hook" }], source: { filePath: "a", index: 1 } })]],
     ])
 
     const runtime = createHooksRuntime(input as never, { hooks, executeBash })
@@ -470,20 +467,18 @@ describe("createHooksRuntime", () => {
       [
         "tool.before.*",
         [
-          {
-            event: "tool.before.*",
+          createHook("tool.before.*", {
             actions: [{ command: "review-pr" }, { bash: "hook" }],
             source: { filePath: "a", index: 0 },
-          },
-          {
-            event: "tool.before.*",
+          }),
+          createHook("tool.before.*", {
             conditions: ["isMainSession"],
             actions: [{ bash: "hook" }],
             source: { filePath: "a", index: 1 },
-          },
+          }),
         ],
       ],
-      [["tool.after.write" as const][0], [{ event: "tool.after.write", actions: [{ bash: "hook" }], source: { filePath: "a", index: 2 } }]],
+      [["tool.after.write" as const][0], [createHook("tool.after.write", { actions: [{ bash: "hook" }], source: { filePath: "a", index: 2 } })]],
     ])
 
     const runtime = createHooksRuntime(input as never, { hooks, executeBash })
@@ -527,23 +522,21 @@ describe("createHooksRuntime", () => {
       [
         "session.created",
         [
-          {
-            event: "session.created",
+          createHook("session.created", {
             conditions: ["isMainSession"],
             actions: [{ bash: "hook" }],
             source: { filePath: "a", index: 0 },
-          },
+          }),
         ],
       ],
       [
         "session.deleted",
         [
-          {
-            event: "session.deleted",
+          createHook("session.deleted", {
             conditions: ["isMainSession"],
             actions: [{ bash: "hook" }],
             source: { filePath: "a", index: 1 },
-          },
+          }),
         ],
       ],
     ])
