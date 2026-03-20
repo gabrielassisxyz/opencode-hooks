@@ -4,7 +4,8 @@ set -euo pipefail
 # Rewrite bad "Modify ..." commit messages on the current branch.
 # Uses claude -p (Haiku) to generate proper semantic messages from each commit's diff.
 
-REPO_DIR="/Users/kristjan.pikhof/Desktop/Development/OpenCode-plugins/opencode-hooks"
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+REPO_DIR=$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null || printf '%s\n' "$SCRIPT_DIR")
 cd "$REPO_DIR"
 
 SYSTEM_PROMPT='You are a git commit message generator. Follow this format EXACTLY:
