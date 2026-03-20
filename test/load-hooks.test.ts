@@ -134,6 +134,43 @@ describe("parseHooksFile", () => {
       expect.objectContaining({ code: "invalid_conditions", path: "hooks[1].conditions[0]" }),
     ])
   })
+
+  it("parses hook ids, detects duplicates, and collects overrides", () => {
+    const result = parseHooksFile(
+      "/repo/.opencode/hook/hooks.yaml",
+      `hooks:
+  - id: base-hook
+    event: session.created
+    actions:
+      - command: first
+  - id: base-hook
+    event: session.idle
+    actions:
+      - command: duplicate
+  - override: base-hook
+    event: session.deleted
+    actions:
+      - command: replacement
+  - override: base-hook
+    disable: true
+`,
+    )
+
+    expect(result.hooks.get("session.created")).toEqual([
+      expect.objectContaining({ id: "base-hook" }),
+    ])
+    expect(result.errors).toEqual([
+      expect.objectContaining({ code: "duplicate_hook_id", path: "hooks[1].id" }),
+    ])
+    expect(result.overrides).toEqual([
+      expect.objectContaining({
+        targetId: "base-hook",
+        disable: false,
+        replacement: expect.objectContaining({ event: "session.deleted" }),
+      }),
+      expect.objectContaining({ targetId: "base-hook", disable: true }),
+    ])
+  })
 })
 
 describe("hook config discovery", () => {
@@ -348,6 +385,73 @@ describe("hook config discovery", () => {
         code: "invalid_frontmatter",
         filePath: projectPath,
         message: "Failed to read hooks.yaml: busy",
+      }),
+    ])
+  })
+
+  it("applies later-file overrides before appending later regular hooks", () => {
+    const homeDir = "/home/tester"
+    const projectDir = "/repo/project"
+    const globalPath = path.join(homeDir, ".config", "opencode", "hook", "hooks.yaml")
+    const projectPath = path.join(projectDir, ".opencode", "hook", "hooks.yaml")
+    const files = new Map([
+      [globalPath, `hooks:
+  - id: global-first
+    event: session.idle
+    actions:
+      - command: global-first
+  - id: global-second
+    event: session.idle
+    actions:
+      - command: global-second
+`],
+      [projectPath, `hooks:
+  - override: global-first
+    event: session.idle
+    actions:
+      - command: project-replacement
+  - override: global-second
+    disable: true
+  - event: session.idle
+    actions:
+      - command: project-appended
+`],
+    ])
+
+    const result = loadDiscoveredHooks({
+      projectDir,
+      homeDir,
+      platform: "linux",
+      exists: (filePath) => files.has(filePath),
+      readFile: (filePath) => files.get(filePath) ?? "",
+    })
+
+    expect(result.errors).toEqual([])
+    expect(result.hooks.get("session.idle")?.map((hook) => hook.actions[0])).toEqual([
+      { command: "project-replacement" },
+      { command: "project-appended" },
+    ])
+  })
+
+  it("reports missing override targets from later discovered files", () => {
+    const projectDir = "/repo/project"
+    const projectPath = path.join(projectDir, ".opencode", "hook", "hooks.yaml")
+
+    const result = loadDiscoveredHooks({
+      projectDir,
+      exists: (filePath) => filePath === projectPath,
+      readFile: () => `hooks:
+  - override: missing-hook
+    disable: true
+`,
+    })
+
+    expect(result.hooks.size).toBe(0)
+    expect(result.errors).toEqual([
+      expect.objectContaining({
+        code: "override_target_not_found",
+        filePath: projectPath,
+        path: "hooks[0].override",
       }),
     ])
   })
