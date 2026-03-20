@@ -26,6 +26,10 @@ export interface HookDiscoveryResult {
   readonly files: string[]
 }
 
+export interface HookLoadOptions extends HookConfigDiscoveryOptions {
+  readonly readFile?: (filePath: string) => string
+}
+
 export function parseHooksFile(filePath: string, content: string): HookDiscoveryResult {
   const frontmatter = parseFrontmatter<HooksFrontmatter>(content)
   if (frontmatter.error) {
@@ -69,18 +73,18 @@ export function parseHooksFile(filePath: string, content: string): HookDiscovery
   return { hooks, errors, files: [filePath] }
 }
 
-export function loadHooksFile(filePath: string): HookDiscoveryResult {
-  return parseHooksFile(filePath, readFileSync(filePath, "utf8"))
+export function loadHooksFile(filePath: string, readFile: (filePath: string) => string = defaultReadFile): HookDiscoveryResult {
+  return parseHooksFile(filePath, readFile(filePath))
 }
 
-export function loadDiscoveredHooks(options: HookConfigDiscoveryOptions = {}): HookDiscoveryResult {
+export function loadDiscoveredHooks(options: HookLoadOptions = {}): HookDiscoveryResult {
   const files = discoverHookConfigPaths(options)
   const hooks = new Map<HookConfig["event"], HookConfig[]>()
   const errors: HookValidationError[] = []
 
   for (const filePath of files) {
-    const result = loadHooksFile(filePath)
-    mergeHookMaps(hooks, result.hooks)
+    const result = loadHooksFile(filePath, options.readFile)
+    mergeHookMapsInto(hooks, result.hooks)
     errors.push(...result.errors)
   }
 
@@ -290,14 +294,14 @@ function createError(filePath: string, code: HookValidationError["code"], messag
   }
 }
 
-function isRecord(value: unknown): value is Record<string, any> {
+function defaultReadFile(filePath: string): string {
+  return readFileSync(filePath, "utf8")
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0
-}
-
-function mergeHookMaps(target: HookMap, source: HookMap): void {
-  mergeHookMapsInto(target, source)
 }
