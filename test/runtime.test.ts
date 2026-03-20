@@ -205,6 +205,11 @@ describe("createHooksRuntime", () => {
             "-old",
             "+new",
             "*** Delete File: src/old.ts",
+            "*** Update File: src/rename-me.ts",
+            "*** Move to: src/renamed.ts",
+            "@@",
+            "-before rename",
+            "+after rename",
             "*** Add File: src/new.ts",
             "+new file",
             "*** End Patch",
@@ -227,7 +232,7 @@ describe("createHooksRuntime", () => {
     await runtime.event?.({ event: { type: "session.idle", properties: { sessionID: "session-1" } } } as never)
     await runtime.event?.({ event: { type: "session.idle", properties: { sessionID: "session-1" } } } as never)
 
-    expect(idleContexts).toEqual([["src/write.ts", "src/edit.ts", "src/old.ts", "src/new.ts"]])
+    expect(idleContexts).toEqual([["src/write.ts", "src/edit.ts", "src/old.ts", "src/rename-me.ts", "src/renamed.ts", "src/new.ts"]])
   })
 
   it("retains modified paths when session.idle dispatch fails and clears them after a later success", async () => {
