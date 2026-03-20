@@ -278,11 +278,12 @@ function parseBashAction(value: unknown): string | HookBashActionConfig | undefi
     return undefined
   }
 
-  if (value.timeout !== undefined && (!Number.isInteger(value.timeout) || value.timeout <= 0)) {
+  const timeout = value.timeout
+  if (timeout !== undefined && (!Number.isInteger(timeout) || timeout <= 0)) {
     return undefined
   }
 
-  return value.timeout !== undefined ? { command: value.command, timeout: value.timeout } : { command: value.command }
+  return timeout !== undefined ? { command: value.command, timeout } : { command: value.command }
 }
 
 function createError(filePath: string, code: HookValidationError["code"], message: string, errorPath?: string): HookValidationError {
