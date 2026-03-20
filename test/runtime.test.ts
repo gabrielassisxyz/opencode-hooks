@@ -1050,6 +1050,59 @@ describe("createHooksRuntime", () => {
     })
   })
 
+  it("logs runIn main resolution failures inside action handling without aborting dispatch", async () => {
+    const { input, get } = createMockPluginInput()
+    get.mockRejectedValueOnce(new Error("root lookup failed"))
+
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+    const bashEvents: string[] = []
+    const executeBash = vi.fn(async ({ context }) => {
+      bashEvents.push(context.event)
+      return {
+        command: "hook",
+        stdout: "",
+        stderr: "",
+        durationMs: 1,
+        exitCode: 0,
+        signal: null,
+        timedOut: false,
+        status: "success" as const,
+        blocking: false,
+      }
+    })
+
+    const hooks: HookMap = new Map([
+      [
+        "tool.after.write",
+        [
+          createHook("tool.after.write", {
+            runIn: "main",
+            actions: [{ command: { name: "review-pr", args: "--summary" } }, { bash: "hook" }],
+            source: { filePath: "a", index: 0 },
+          }),
+        ],
+      ],
+    ])
+
+    const runtime = createHooksRuntime(input as never, { hooks, executeBash })
+
+    await runtime["tool.execute.before"]?.(
+      { tool: "write", sessionID: "child-session", callID: "call-resolution-failure" },
+      { args: { filePath: "src/file.ts", value: "content" } },
+    )
+
+    await expect(
+      runtime["tool.execute.after"]?.(
+        { tool: "write", sessionID: "child-session", callID: "call-resolution-failure", args: {} },
+        { title: "", output: "", metadata: {} },
+      ),
+    ).resolves.toBeUndefined()
+
+    expect(bashEvents).toEqual(["tool.after.write"])
+    expect(errorSpy).toHaveBeenCalledWith("[opencode-hooks] tool.after.write hook from a failed: root lookup failed")
+    errorSpy.mockRestore()
+  })
+
   it("allows parallel runIn main command and tool actions without skipping independent dispatches", async () => {
     const { input, command, prompt } = createMockPluginInput()
     let releaseActions: (() => void) | undefined
