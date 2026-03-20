@@ -328,6 +328,7 @@ async function dispatchHooks(
   options: { canBlock?: boolean } = {},
   activeDispatches: Set<string>,
   activeActionTargets: Set<string>,
+  worktreeDirectoryPromise: Promise<string> = Promise.resolve(input.directory),
 ): Promise<HookExecutionResult> {
   const eventHooks = hooks.get(event)
   if (!eventHooks || eventHooks.length === 0) {
@@ -343,7 +344,7 @@ async function dispatchHooks(
 
   try {
     for (const hook of eventHooks) {
-      const result = await executeHook(hook, state, input, runBashHook, sessionID, context, options, activeActionTargets)
+      const result = await executeHook(hook, state, input, runBashHook, sessionID, context, options, activeActionTargets, worktreeDirectoryPromise)
       if (result.blocked) {
         return result
       }
@@ -364,6 +365,7 @@ async function executeHook(
   context: RuntimeActionContext,
   options: { canBlock?: boolean },
   activeActionTargets: Set<string>,
+  worktreeDirectoryPromise: Promise<string>,
 ): Promise<HookExecutionResult> {
   try {
     if (!(await shouldRunHook(hook, state, input, sessionID, context))) {
