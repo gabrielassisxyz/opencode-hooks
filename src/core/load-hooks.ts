@@ -138,9 +138,10 @@ function parseHookDefinition(
 
   const conditionsResult = parseConditions(filePath, hookDefinition.conditions, index)
   const actionsResult = parseActions(filePath, hookDefinition.actions, index)
+  const errors = [...conditionsResult.errors, ...actionsResult.errors]
 
-  if (actionsResult.actions.length === 0) {
-    return { errors: [...conditionsResult.errors, ...actionsResult.errors] }
+  if (errors.length > 0 || actionsResult.actions.length === 0) {
+    return { errors }
   }
 
   return {
@@ -150,7 +151,7 @@ function parseHookDefinition(
       ...(conditionsResult.conditions ? { conditions: conditionsResult.conditions } : {}),
       source: { filePath, index },
     },
-    errors: [...conditionsResult.errors, ...actionsResult.errors],
+    errors,
   }
 }
 
@@ -185,6 +186,13 @@ function parseActions(
   index: number,
 ): { actions: HookAction[]; errors: HookValidationError[] } {
   if (!Array.isArray(actions)) {
+    return {
+      actions: [],
+      errors: [createError(filePath, "invalid_actions", `hooks[${index}].actions must be a non-empty array.`, `hooks[${index}].actions`)],
+    }
+  }
+
+  if (actions.length === 0) {
     return {
       actions: [],
       errors: [createError(filePath, "invalid_actions", `hooks[${index}].actions must be a non-empty array.`, `hooks[${index}].actions`)],
