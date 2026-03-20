@@ -104,10 +104,10 @@ describe("executeBashHook", () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
     const token = "json-token-secret"
     const password = "quoted-password-secret"
+    const payload = `{"token":"${token}","nested":{"password":"${password}"}} password="${password}"`
 
     await executeBashHook({
-      command:
-        `node -e "process.stderr.write(JSON.stringify({token:\"${token}\",nested:{password:\"${password}\"}}) + ' password=\\\"${password}\\\"'); process.exit(1)"`,
+      command: `node -e 'process.stderr.write(${JSON.stringify(payload)}); process.exit(1)'`,
       context: baseContext,
       projectDir: "/repo/project",
     })
