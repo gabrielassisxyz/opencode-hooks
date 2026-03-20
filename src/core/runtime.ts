@@ -143,7 +143,7 @@ export function createHooksRuntime(input: PluginInput, options: CreateHooksRunti
       }
 
       const pending = state.consumePendingToolCall(eventInput.callID)
-      const toolArgs = pending?.toolArgs ?? {}
+      const toolArgs = resolveToolArgs(eventInput.args, pending?.toolArgs)
 
       state.addModifiedPaths(sessionID, getToolAffectedPaths(eventInput.tool, toolArgs))
 
@@ -195,8 +195,9 @@ export function createHooksRuntime(input: PluginInput, options: CreateHooksRunti
           return
         }
 
-        const files = state.consumeModifiedPaths(sessionID)
+        const files = state.getModifiedPaths(sessionID)
         await dispatchHooks(hooks, state, input, runBashHook, "session.idle", sessionID, { files })
+        state.clearModifiedPaths(sessionID)
       }
     },
   }
@@ -272,12 +273,25 @@ async function executeHook(
   context: RuntimeActionContext,
   options: { canBlock?: boolean },
 ): Promise<HookExecutionResult> {
-  if (!(await shouldRunHook(hook, state, input, sessionID, context))) {
+  try {
+    if (!(await shouldRunHook(hook, state, input, sessionID, context))) {
+      return { blocked: false }
+    }
+  } catch (error) {
+    logHookFailure(hook.event, hook.source.filePath, error)
     return { blocked: false }
   }
 
   for (const action of hook.actions) {
-    const result = await executeAction(action, input, runBashHook, hook.event, sessionID, context)
+    let result: HookExecutionResult
+
+    try {
+      result = await executeAction(action, input, runBashHook, hook.event, sessionID, context)
+    } catch (error) {
+      logHookFailure(hook.event, hook.source.filePath, error)
+      continue
+    }
+
     if (result.blocked && options.canBlock) {
       return result
     }
@@ -390,4 +404,20 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
 
 function pickString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim().length > 0 ? value : undefined
+}
+
+function resolveToolArgs(
+  eventArgs: Record<string, unknown> | undefined,
+  pendingArgs: Record<string, unknown> | undefined,
+): Record<string, unknown> {
+  if (eventArgs && Object.keys(eventArgs).length > 0) {
+    return eventArgs
+  }
+
+  return pendingArgs ?? eventArgs ?? {}
+}
+
+function logHookFailure(event: HookEvent, filePath: string, error: unknown): void {
+  const message = error instanceof Error ? error.message : String(error)
+  console.error(`[opencode-hooks] ${event} hook from ${filePath} failed: ${message}`)
 }
