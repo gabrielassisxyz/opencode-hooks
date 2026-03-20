@@ -16,8 +16,9 @@ set -euo pipefail
 #     Commits each uncommitted file individually.
 #
 # Notes:
-# - In hook mode, file.changed is preferred and tool.after mutation hooks are
-#   treated as advanced compatibility inputs.
+# - In hook mode, file.changed is preferred. Advanced compatibility also works
+#   with tool.after.* or tool.after.<name> for write, edit, multiedit, patch,
+#   and apply_patch events that expose usable file paths.
 # - The script stages only explicit file paths from the hook payload; it never
 #   runs a blanket `git add -A` after arbitrary bash tool executions.
 # - Commits respect normal git hooks; this sample does not use --no-verify.
