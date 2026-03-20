@@ -540,26 +540,20 @@ async function executeAction(
     }
 
     const actionKey = `${event}:${targetSessionID}:command:${sourceFilePath}:${JSON.stringify(action.command)}`
-    if (activeActionTargets.has(actionKey)) {
-      return { blocked: false }
-    }
-
-    activeActionTargets.add(actionKey)
-
     try {
       const config = typeof action.command === "string" ? { name: action.command, args: "" } : action.command
-      await input.client.session.command({
-        path: { id: targetSessionID },
-        body: {
-          command: config.name,
-          arguments: config.args ?? "",
-        },
-        query: { directory: executionDirectory },
-      })
+      await withActionRecursionGuard(actionRecursionGuards, actionKey, () =>
+        input.client.session.command({
+          path: { id: targetSessionID },
+          body: {
+            command: config.name,
+            arguments: config.args ?? "",
+          },
+          query: { directory: executionDirectory },
+        }),
+      )
     } catch (error) {
       logHookFailure(event, sourceFilePath, error)
-    } finally {
-      activeActionTargets.delete(actionKey)
     }
 
     return { blocked: false }
@@ -571,29 +565,23 @@ async function executeAction(
     }
 
     const actionKey = `${event}:${targetSessionID}:tool:${sourceFilePath}:${JSON.stringify(action.tool)}`
-    if (activeActionTargets.has(actionKey)) {
-      return { blocked: false }
-    }
-
-    activeActionTargets.add(actionKey)
-
     try {
-      await input.client.session.prompt({
-        path: { id: targetSessionID },
-        body: {
-          parts: [
-            {
-              type: "text",
-              text: `Use the ${action.tool.name} tool with these arguments: ${JSON.stringify(action.tool.args ?? {})}`,
-            },
-          ],
-        },
-        query: { directory: executionDirectory },
-      })
+      await withActionRecursionGuard(actionRecursionGuards, actionKey, () =>
+        input.client.session.prompt({
+          path: { id: targetSessionID },
+          body: {
+            parts: [
+              {
+                type: "text",
+                text: `Use the ${action.tool.name} tool with these arguments: ${JSON.stringify(action.tool.args ?? {})}`,
+              },
+            ],
+          },
+          query: { directory: executionDirectory },
+        }),
+      )
     } catch (error) {
       logHookFailure(event, sourceFilePath, error)
-    } finally {
-      activeActionTargets.delete(actionKey)
     }
 
     return { blocked: false }
@@ -678,4 +666,33 @@ function resolveToolArgs(
 function logHookFailure(event: HookEvent, filePath: string, error: unknown): void {
   const message = error instanceof Error ? error.message : String(error)
   console.error(`[opencode-hooks] ${event} hook from ${filePath} failed: ${message}`)
+}
+
+async function withActionRecursionGuard<T>(
+  actionRecursionGuards: AsyncLocalStorage<Set<string>>,
+  actionKey: string,
+  execute: () => Promise<T>,
+): Promise<T | undefined> {
+  const activeKeys = actionRecursionGuards.getStore()
+  if (activeKeys?.has(actionKey)) {
+    return undefined
+  }
+
+  if (activeKeys) {
+    activeKeys.add(actionKey)
+    try {
+      return await execute()
+    } finally {
+      activeKeys.delete(actionKey)
+    }
+  }
+
+  const rootKeys = new Set<string>([actionKey])
+  return await actionRecursionGuards.run(rootKeys, async () => {
+    try {
+      return await execute()
+    } finally {
+      rootKeys.delete(actionKey)
+    }
+  })
 }
