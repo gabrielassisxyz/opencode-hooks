@@ -262,8 +262,15 @@ export function createHooksRuntime(input: PluginInput, options: CreateHooksRunti
 
         const changes = state.getFileChanges(sessionID)
         const files = state.getModifiedPaths(sessionID)
-        await dispatchHooks(hooks, state, input, runBashHook, "session.idle", sessionID, { files, changes }, {}, activeDispatches, activeActionTargets, worktreeDirectoryPromise)
-        state.consumeFileChanges(sessionID, changes)
+        state.beginIdleDispatch(sessionID, changes)
+
+        try {
+          await dispatchHooks(hooks, state, input, runBashHook, "session.idle", sessionID, { files, changes }, {}, activeDispatches, activeActionTargets, worktreeDirectoryPromise)
+          state.consumeFileChanges(sessionID, changes)
+        } catch (error) {
+          state.cancelIdleDispatch(sessionID)
+          throw error
+        }
       }
     },
   }
