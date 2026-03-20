@@ -8,11 +8,13 @@ import {
   type HookCommandActionConfig,
   type HookCondition,
   type HookConfig,
+  type HookOverrideEntry,
   type HookRunIn,
   type HookScope,
   type HookMap,
   type HookToolActionConfig,
   type HookValidationError,
+  type ParsedHooksFile,
   isHookCondition,
   isHookEvent,
   isHookRunIn,
@@ -34,11 +36,14 @@ export interface HookLoadSnapshot extends HookDiscoveryResult {
   readonly signature: string
 }
 
-export function parseHooksFile(filePath: string, content: string): HookDiscoveryResult {
+type ParsedHooksFileResult = ParsedHooksFile & { readonly files: string[] }
+
+export function parseHooksFile(filePath: string, content: string): ParsedHooksFileResult {
   const document = YAML.parseDocument(content)
   if (document.errors.length > 0) {
     return {
       hooks: new Map(),
+      overrides: [],
       errors: [{ code: "invalid_frontmatter", filePath, message: document.errors[0]?.message ?? "Failed to parse hooks.yaml." }],
       files: [filePath],
     }
@@ -49,6 +54,7 @@ export function parseHooksFile(filePath: string, content: string): HookDiscovery
   if (!isRecord(parsed)) {
     return {
       hooks: new Map(),
+      overrides: [],
       errors: [{ code: "invalid_frontmatter", filePath, message: "hooks.yaml must parse to an object." }],
       files: [filePath],
     }
@@ -57,6 +63,7 @@ export function parseHooksFile(filePath: string, content: string): HookDiscovery
   if (!Object.prototype.hasOwnProperty.call(parsed, "hooks")) {
     return {
       hooks: new Map(),
+      overrides: [],
       errors: [{ code: "missing_hooks", filePath, message: "hooks.yaml must define a hooks list.", path: "hooks" }],
       files: [filePath],
     }
@@ -65,18 +72,29 @@ export function parseHooksFile(filePath: string, content: string): HookDiscovery
   if (!Array.isArray(parsed.hooks)) {
     return {
       hooks: new Map(),
+      overrides: [],
       errors: [{ code: "invalid_hooks", filePath, message: "hooks must be an array.", path: "hooks" }],
       files: [filePath],
     }
   }
 
   const hooks = new Map<HookConfig["event"], HookConfig[]>()
+  const overrides: HookOverrideEntry[] = []
   const errors: HookValidationError[] = []
+  const seenIds = new Set<string>()
 
   parsed.hooks.forEach((hookDefinition, index) => {
-    const parsedHook = parseHookDefinition(filePath, hookDefinition, index)
+    const parsedHook = parseHookDefinition(filePath, hookDefinition, index, seenIds)
     errors.push(...parsedHook.errors)
     if (!parsedHook.hook) {
+      if (parsedHook.override) {
+        overrides.push(parsedHook.override)
+      }
+      return
+    }
+
+    if (parsedHook.override) {
+      overrides.push(parsedHook.override)
       return
     }
 
@@ -84,7 +102,7 @@ export function parseHooksFile(filePath: string, content: string): HookDiscovery
     hooks.set(parsedHook.hook.event, [...existing, parsedHook.hook])
   })
 
-  return { hooks, errors, files: [filePath] }
+  return { hooks, overrides, errors, files: [filePath] }
 }
 
 export function loadHooksFile(filePath: string, readFile: (filePath: string) => string = defaultReadFile): HookDiscoveryResult {
@@ -127,7 +145,11 @@ function loadDiscoveredHooksFromFiles(files: string[], options: HookLoadOptions)
 
   for (const filePath of files) {
     const result = loadHooksFile(filePath, options.readFile)
+    const resolved = resolveOverrides(hooks, result.overrides)
+    hooks.clear()
+    mergeHookMapsInto(hooks, resolved.hooks)
     mergeHookMapsInto(hooks, result.hooks)
+    errors.push(...resolved.errors)
     errors.push(...result.errors)
   }
 
@@ -152,14 +174,29 @@ function parseHookDefinition(
   filePath: string,
   hookDefinition: unknown,
   index: number,
-): { hook?: HookConfig; errors: HookValidationError[] } {
+  seenIds: Set<string>,
+): { hook?: HookConfig; override?: HookOverrideEntry; errors: HookValidationError[] } {
   if (!isRecord(hookDefinition)) {
     return { errors: [createError(filePath, "invalid_hook", `hooks[${index}] must be an object.`, `hooks[${index}]`)] }
   }
 
+  const idResult = parseHookId(filePath, hookDefinition.id, index, seenIds)
+  const overrideResult = parseOverrideTarget(filePath, hookDefinition.override, hookDefinition.disable, index)
+
+  if (overrideResult.isDisableOverride) {
+    return {
+      override: {
+        targetId: overrideResult.targetId,
+        disable: true,
+        source: { filePath, index },
+      },
+      errors: [...idResult.errors, ...overrideResult.errors],
+    }
+  }
+
   const event = hookDefinition.event
   if (!isHookEvent(event)) {
-    return { errors: [createError(filePath, "invalid_event", `hooks[${index}].event is not a supported hook event.`, `hooks[${index}].event`)] }
+    return { errors: [...idResult.errors, ...overrideResult.errors, createError(filePath, "invalid_event", `hooks[${index}].event is not a supported hook event.`, `hooks[${index}].event`)] }
   }
 
   const scopeResult = parseScope(filePath, hookDefinition.scope, index)
@@ -167,23 +204,76 @@ function parseHookDefinition(
 
   const conditionsResult = parseConditions(filePath, hookDefinition.conditions, index)
   const actionsResult = parseActions(filePath, hookDefinition.actions, index)
-  const errors = [...scopeResult.errors, ...runInResult.errors, ...conditionsResult.errors, ...actionsResult.errors]
+  const errors = [...idResult.errors, ...overrideResult.errors, ...scopeResult.errors, ...runInResult.errors, ...conditionsResult.errors, ...actionsResult.errors]
 
   if (errors.length > 0 || actionsResult.actions.length === 0) {
     return { errors }
   }
 
+  const hook: HookConfig = {
+    ...(idResult.id ? { id: idResult.id } : {}),
+    event,
+    actions: actionsResult.actions,
+    scope: scopeResult.scope,
+    runIn: runInResult.runIn,
+    ...(conditionsResult.conditions ? { conditions: conditionsResult.conditions } : {}),
+    source: { filePath, index },
+  }
+
+  if (overrideResult.targetId) {
+    return {
+      override: {
+        targetId: overrideResult.targetId,
+        disable: false,
+        replacement: hook,
+        source: { filePath, index },
+      },
+      errors,
+    }
+  }
+
   return {
-    hook: {
-      event,
-      actions: actionsResult.actions,
-      scope: scopeResult.scope,
-      runIn: runInResult.runIn,
-      ...(conditionsResult.conditions ? { conditions: conditionsResult.conditions } : {}),
-      source: { filePath, index },
-    },
+    hook,
     errors,
   }
+}
+
+export function resolveOverrides(hooks: HookMap, overrides: HookOverrideEntry[]): { hooks: HookMap; errors: HookValidationError[] } {
+  const orderedHooks = flattenHookMap(hooks)
+  const errors: HookValidationError[] = []
+
+  for (const override of overrides) {
+    const hookIndexById = new Map<string, number>()
+    orderedHooks.forEach((hook, index) => {
+      if (hook.id) {
+        hookIndexById.set(hook.id, index)
+      }
+    })
+
+    const targetIndex = hookIndexById.get(override.targetId)
+    if (targetIndex === undefined) {
+      errors.push(
+        createError(
+          override.source.filePath,
+          "override_target_not_found",
+          `hooks[${override.source.index}].override targets unknown hook id \"${override.targetId}\".`,
+          `hooks[${override.source.index}].override`,
+        ),
+      )
+      continue
+    }
+
+    if (override.disable) {
+      orderedHooks.splice(targetIndex, 1)
+      continue
+    }
+
+    if (override.replacement) {
+      orderedHooks.splice(targetIndex, 1, override.replacement)
+    }
+  }
+
+  return { hooks: toHookMap(orderedHooks), errors }
 }
 
 function parseScope(filePath: string, scope: unknown, index: number): { scope: HookScope; errors: HookValidationError[] } {
@@ -379,4 +469,62 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0
+}
+
+function parseHookId(filePath: string, id: unknown, index: number, seenIds: Set<string>): { id?: string; errors: HookValidationError[] } {
+  if (id === undefined) {
+    return { errors: [] }
+  }
+
+  if (!isNonEmptyString(id)) {
+    return {
+      errors: [createError(filePath, "invalid_hook", `hooks[${index}].id must be a non-empty string.`, `hooks[${index}].id`)],
+    }
+  }
+
+  if (seenIds.has(id)) {
+    return {
+      id,
+      errors: [createError(filePath, "duplicate_hook_id", `hooks[${index}].id duplicates hook id \"${id}\" within the same file.`, `hooks[${index}].id`)],
+    }
+  }
+
+  seenIds.add(id)
+  return { id, errors: [] }
+}
+
+function parseOverrideTarget(
+  filePath: string,
+  override: unknown,
+  disable: unknown,
+  index: number,
+): { targetId?: string; isDisableOverride: boolean; errors: HookValidationError[] } {
+  const errors: HookValidationError[] = []
+
+  if (override !== undefined && !isNonEmptyString(override)) {
+    errors.push(createError(filePath, "invalid_override", `hooks[${index}].override must be a non-empty string.`, `hooks[${index}].override`))
+  }
+
+  if (disable !== undefined && typeof disable !== "boolean") {
+    errors.push(createError(filePath, "invalid_override", `hooks[${index}].disable must be a boolean.`, `hooks[${index}].disable`))
+  }
+
+  const targetId = isNonEmptyString(override) ? override : undefined
+  const isDisableOverride = targetId !== undefined && disable === true && errors.length === 0
+
+  return { targetId, isDisableOverride, errors }
+}
+
+function flattenHookMap(hooks: HookMap): HookConfig[] {
+  return Array.from(hooks.values()).flat()
+}
+
+function toHookMap(hooks: HookConfig[]): HookMap {
+  const hookMap = new Map<HookConfig["event"], HookConfig[]>()
+  for (const hook of hooks) {
+    const existing = hookMap.get(hook.event) ?? []
+    hookMap.set(hook.event, [...existing, hook])
+  }
+
+  return hookMap
 }
