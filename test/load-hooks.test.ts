@@ -84,6 +84,7 @@ describe("hook config discovery", () => {
       platform: "win32",
       homeDir: "C:/Users/tester",
       appDataDir: "C:/Users/tester/AppData/Roaming",
+      exists: () => false,
     })
 
     expect(resolved.global).toBe(path.join("C:/Users/tester/AppData/Roaming", "opencode", "hook", "hooks.md"))
@@ -137,6 +138,7 @@ hooks:
       homeDir,
       platform: "linux",
       exists: (filePath) => files.has(filePath),
+      readFile: (filePath) => files.get(filePath) ?? "",
     })
 
     expect(result.files).toEqual([globalPath, projectPath])
