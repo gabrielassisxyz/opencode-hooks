@@ -279,7 +279,7 @@ function parseBashAction(value: unknown): string | HookBashActionConfig | undefi
   }
 
   const timeout = value.timeout
-  if (timeout !== undefined && (!Number.isInteger(timeout) || timeout <= 0)) {
+  if (timeout !== undefined && (typeof timeout !== "number" || !Number.isInteger(timeout) || timeout <= 0)) {
     return undefined
   }
 
