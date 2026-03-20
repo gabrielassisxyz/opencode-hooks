@@ -46,6 +46,8 @@ Hooks are merged from global and project locations.
 | macOS / Linux | `~/.config/opencode/hook/hooks.md` | `<project>/.opencode/hook/hooks.md` |
 | Windows | `~/.config/opencode/hook/hooks.md` preferred, otherwise `%APPDATA%/opencode/hook/hooks.md` | `<project>/.opencode/hook/hooks.md` |
 
+Windows paths are supported for config discovery, but bash actions still require a working `bash` runtime on the machine where OpenCode loads the plugin.
+
 Behavior:
 
 - global hooks load first
@@ -181,7 +183,7 @@ If `timeout` is omitted, bash actions use the runtime default of `60000` millise
 
 ## Bash contract
 
-For bash actions, the runtime passes both environment variables and JSON over stdin.
+For bash actions, the runtime inherits the current process environment, adds `OPENCODE_*` variables, and passes JSON over stdin.
 
 ### Environment variables
 
@@ -189,6 +191,8 @@ For bash actions, the runtime passes both environment variables and JSON over st
 |---|---|
 | `OPENCODE_PROJECT_DIR` | Absolute project path |
 | `OPENCODE_SESSION_ID` | Current OpenCode session id |
+
+All existing `process.env` variables remain available to the bash process unless your shell or parent process overrides them.
 
 ### Stdin JSON
 
@@ -222,7 +226,7 @@ For tool hooks, the runtime also sends tool context:
 | Exit code | Meaning |
 |---|---|
 | `0` | Success |
-| `2` | Blocking failure for `tool.before.*` hooks |
+| `2` | Blocking failure only for `tool.before.*` and `tool.before.<name>` bash hooks |
 | anything else | Non-blocking failure; later actions still run |
 
 ## Blocking semantics
@@ -238,9 +242,11 @@ Only `tool.before.*` and `tool.before.<name>` hooks can block tool execution.
 
 - hooks for the same event run in declaration order
 - global hooks are appended before project hooks for the same event
+- command action failures, tool action failures, and `isMainSession` lookup failures are logged and do not block tool execution
 - action failures are logged and later actions continue unless a blocking `tool.before` bash action exits with `2`
 - `session.idle` only sees files tracked from OpenCode mutation tools in the current session
-- after `session.idle` dispatch completes, that session's tracked modified-file list is cleared
+- after successful `session.idle` dispatch completes, that session's tracked modified-file list is cleared
+- if `session.idle` dispatch throws before completion, tracked paths are preserved for retry on the next idle event
 
 Example: block writes to secret files.
 
@@ -271,8 +277,8 @@ Behavior details:
 
 - `write`, `edit`, and `multiedit` track a single file path from args such as `filePath`
 - `apply_patch` parses `*** Add File`, `*** Update File`, and `*** Delete File` headers from the patch text
-- paths are stored per session until the next `session.idle`
-- when `session.idle` fires, the runtime passes the accumulated `files` array to hook actions and then clears that list
+- paths are stored per session until the next successful `session.idle`
+- when `session.idle` fires, the runtime passes the accumulated `files` array to hook actions and clears that list only after dispatch succeeds
 - `hasCodeChange` checks those tracked paths, so docs-only edits like `README.md` will not satisfy the condition
 
 ## Examples
