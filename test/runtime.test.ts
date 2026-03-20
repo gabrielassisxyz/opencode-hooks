@@ -645,8 +645,8 @@ describe("createHooksRuntime", () => {
 
     await runtime.event?.({ event: { type: "session.created", properties: { info: { id: "main-session" } } } } as never)
     await runtime.event?.({ event: { type: "session.created", properties: { info: { id: "child-session", parentID: "main-session" } } } } as never)
-    await runtime.event?.({ event: { type: "session.deleted", properties: { info: { id: "main-session" } } } } as never)
     await runtime.event?.({ event: { type: "session.deleted", properties: { info: { id: "child-session", parentID: "main-session" } } } } as never)
+    await runtime.event?.({ event: { type: "session.deleted", properties: { info: { id: "main-session" } } } } as never)
 
     expect(command).toHaveBeenCalledTimes(1)
     expect(command).toHaveBeenCalledWith({
