@@ -164,6 +164,8 @@ export function createHooksRuntime(input: PluginInput, options: CreateHooksRunti
         state,
         input,
         runBashHook,
+        activeDispatches,
+        activeActionTargets,
         "before",
         eventInput.tool,
         sessionID,
@@ -198,7 +200,7 @@ export function createHooksRuntime(input: PluginInput, options: CreateHooksRunti
           changes,
           toolName: eventInput.tool,
           toolArgs,
-        })
+        }, {}, activeDispatches, activeActionTargets)
       }
 
       await dispatchToolHooks(
@@ -206,6 +208,8 @@ export function createHooksRuntime(input: PluginInput, options: CreateHooksRunti
         state,
         input,
         runBashHook,
+        activeDispatches,
+        activeActionTargets,
         "after",
         eventInput.tool,
         sessionID,
@@ -229,7 +233,7 @@ export function createHooksRuntime(input: PluginInput, options: CreateHooksRunti
         }
 
         state.rememberSession(sessionID, pickString(info?.parentID) ?? null)
-        await dispatchHooks(hooks, state, input, runBashHook, "session.created", sessionID)
+        await dispatchHooks(hooks, state, input, runBashHook, "session.created", sessionID, {}, {}, activeDispatches, activeActionTargets)
         return
       }
 
@@ -239,10 +243,10 @@ export function createHooksRuntime(input: PluginInput, options: CreateHooksRunti
         if (!sessionID) {
           return
         }
-
+        
         state.rememberSession(sessionID, pickString(info?.parentID) ?? undefined)
         state.deleteSession(sessionID)
-        await dispatchHooks(hooks, state, input, runBashHook, "session.deleted", sessionID)
+        await dispatchHooks(hooks, state, input, runBashHook, "session.deleted", sessionID, {}, {}, activeDispatches, activeActionTargets)
         return
       }
 
@@ -254,18 +258,20 @@ export function createHooksRuntime(input: PluginInput, options: CreateHooksRunti
 
         const changes = state.getFileChanges(sessionID)
         const files = state.getModifiedPaths(sessionID)
-        await dispatchHooks(hooks, state, input, runBashHook, "session.idle", sessionID, { files, changes })
+        await dispatchHooks(hooks, state, input, runBashHook, "session.idle", sessionID, { files, changes }, {}, activeDispatches, activeActionTargets)
         state.clearModifiedPaths(sessionID)
       }
     },
   }
 }
 
-  async function dispatchToolHooks(
+async function dispatchToolHooks(
   hooks: HookMap,
   state: SessionStateStore,
   input: PluginInput,
   runBashHook: ExecuteBashHook,
+  activeDispatches: Set<string>,
+  activeActionTargets: Set<string>,
   phase: "before" | "after",
   toolName: string,
   sessionID: string,
@@ -280,6 +286,8 @@ export function createHooksRuntime(input: PluginInput, options: CreateHooksRunti
     sessionID,
     context,
     { canBlock: phase === "before" },
+    activeDispatches,
+    activeActionTargets,
   )
   if (wildcardResult.blocked) {
     return wildcardResult
@@ -295,6 +303,8 @@ export function createHooksRuntime(input: PluginInput, options: CreateHooksRunti
       sessionID,
       context,
       { canBlock: phase === "before" },
+      activeDispatches,
+      activeActionTargets,
     )
 
     if (result.blocked) {
@@ -314,6 +324,8 @@ async function dispatchHooks(
   sessionID: string,
   context: RuntimeActionContext = {},
   options: { canBlock?: boolean } = {},
+  activeDispatches: Set<string>,
+  activeActionTargets: Set<string>,
 ): Promise<HookExecutionResult> {
   const eventHooks = hooks.get(event)
   if (!eventHooks || eventHooks.length === 0) {
@@ -329,7 +341,7 @@ async function dispatchHooks(
 
   try {
     for (const hook of eventHooks) {
-      const result = await executeHook(hook, state, input, runBashHook, sessionID, context, options)
+      const result = await executeHook(hook, state, input, runBashHook, sessionID, context, options, activeActionTargets)
       if (result.blocked) {
         return result
       }
@@ -349,6 +361,7 @@ async function executeHook(
   sessionID: string,
   context: RuntimeActionContext,
   options: { canBlock?: boolean },
+  activeActionTargets: Set<string>,
 ): Promise<HookExecutionResult> {
   try {
     if (!(await shouldRunHook(hook, state, input, sessionID, context))) {
@@ -360,7 +373,7 @@ async function executeHook(
   }
 
   for (const action of hook.actions) {
-    const result = await executeAction(action, hook.runIn, input, state, runBashHook, hook.event, sessionID, context, hook.source.filePath)
+    const result = await executeAction(action, hook.runIn, input, state, runBashHook, hook.event, sessionID, context, hook.source.filePath, activeActionTargets)
     if (result.blocked && options.canBlock) {
       return result
     }
@@ -401,6 +414,7 @@ async function executeAction(
   sessionID: string,
   context: RuntimeActionContext,
   sourceFilePath: string,
+  activeActionTargets: Set<string>,
 ): Promise<HookExecutionResult> {
   const targetSessionID = await resolveActionSessionID(state, input, sessionID, runIn)
   const actionContext: RuntimeActionContext = { ...context, sourceSessionID: sessionID, targetSessionID }

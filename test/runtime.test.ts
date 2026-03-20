@@ -25,7 +25,10 @@ function createMockPluginInput() {
   }
 }
 
-function createHook(event: HookEvent, config: Omit<HookConfig, "event" | "scope" | "runIn">): HookConfig {
+function createHook(
+  event: HookEvent,
+  config: Omit<HookConfig, "event" | "scope" | "runIn"> & Partial<Pick<HookConfig, "scope" | "runIn">>,
+): HookConfig {
   return {
     event,
     scope: "all",
