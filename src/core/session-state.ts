@@ -63,15 +63,22 @@ export class SessionStateStore {
     }
   }
 
-  consumeModifiedPaths(sessionID: string): string[] {
+  getModifiedPaths(sessionID: string): string[] {
     const record = this.sessions.get(sessionID)
     if (!record || record.modifiedPaths.size === 0) {
       return []
     }
 
-    const filePaths = Array.from(record.modifiedPaths)
+    return Array.from(record.modifiedPaths)
+  }
+
+  clearModifiedPaths(sessionID: string): void {
+    const record = this.sessions.get(sessionID)
+    if (!record) {
+      return
+    }
+
     record.modifiedPaths.clear()
-    return filePaths
   }
 
   private getOrCreateSession(sessionID: string): SessionRecord {
