@@ -4,7 +4,7 @@ import path from "node:path"
 import { describe, expect, it } from "vitest"
 
 import { discoverHookConfigPaths, resolveHookConfigPaths } from "../src/core/config-paths.ts"
-import { loadDiscoveredHooks, parseHooksFile } from "../src/core/load-hooks.ts"
+import { loadDiscoveredHooks, loadDiscoveredHooksSnapshot, parseHooksFile } from "../src/core/load-hooks.ts"
 
 describe("parseHooksFile", () => {
   it("parses supported hook schema and preserves declaration order", () => {
@@ -247,6 +247,56 @@ describe("hook config discovery", () => {
     expect(result.errors).toEqual([
       expect.objectContaining({ filePath: globalPath, code: "invalid_event", path: "hooks[1].event" }),
       expect.objectContaining({ filePath: projectPath, code: "invalid_actions", path: "hooks[1].actions" }),
+    ])
+  })
+
+  it("builds a stable snapshot signature from discovered hooks.yaml contents", () => {
+    const projectDir = "/repo/project"
+    const projectPath = path.join(projectDir, ".opencode", "hook", "hooks.yaml")
+    let projectFile = `hooks:
+  - event: session.created
+    actions:
+      - command: first
+`
+
+    const readSnapshot = () => loadDiscoveredHooksSnapshot({
+      projectDir,
+      exists: (filePath) => filePath === projectPath,
+      readFile: () => projectFile,
+    })
+
+    const first = readSnapshot()
+    const second = readSnapshot()
+    projectFile = `hooks:
+  - event: session.created
+    actions:
+      - command: second
+`
+    const third = readSnapshot()
+
+    expect(first.signature).toBe(second.signature)
+    expect(third.signature).not.toBe(first.signature)
+  })
+
+  it("returns validation errors when hooks.yaml cannot be read", () => {
+    const projectDir = "/repo/project"
+    const projectPath = path.join(projectDir, ".opencode", "hook", "hooks.yaml")
+
+    const result = loadDiscoveredHooks({
+      projectDir,
+      exists: (filePath) => filePath === projectPath,
+      readFile: () => {
+        throw new Error("busy")
+      },
+    })
+
+    expect(result.hooks.size).toBe(0)
+    expect(result.errors).toEqual([
+      expect.objectContaining({
+        code: "invalid_frontmatter",
+        filePath: projectPath,
+        message: "Failed to read hooks.yaml: busy",
+      }),
     ])
   })
 })
