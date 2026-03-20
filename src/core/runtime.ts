@@ -135,7 +135,7 @@ export function createHooksRuntime(input: PluginInput, options: CreateHooksRunti
       }
     },
 
-    "tool.execute.after": async (eventInput: ToolExecuteAfterInput): Promise<void> => {
+    "tool.execute.after": async (eventInput: ToolExecuteAfterInput, _eventOutput?: unknown): Promise<void> => {
       const sessionID = eventInput.sessionID
       if (!sessionID) {
         return
