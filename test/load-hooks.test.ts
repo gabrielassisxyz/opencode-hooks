@@ -148,4 +148,93 @@ hooks:
       { command: "project" },
     ])
   })
+
+  it("preserves per-file declaration order while merging discovered hook files", () => {
+    const homeDir = "/home/tester"
+    const projectDir = "/repo/project"
+    const globalPath = path.join(homeDir, ".config", "opencode", "hook", "hooks.md")
+    const projectPath = path.join(projectDir, ".opencode", "hook", "hooks.md")
+    const files = new Map([
+      [globalPath, `---
+hooks:
+  - event: tool.before.write
+    actions:
+      - command: global-first
+  - event: tool.before.write
+    actions:
+      - command: global-second
+---
+`],
+      [projectPath, `---
+hooks:
+  - event: tool.before.write
+    actions:
+      - command: project-first
+  - event: tool.before.write
+    actions:
+      - command: project-second
+---
+`],
+    ])
+
+    const result = loadDiscoveredHooks({
+      projectDir,
+      homeDir,
+      platform: "linux",
+      exists: (filePath) => files.has(filePath),
+      readFile: (filePath) => files.get(filePath) ?? "",
+    })
+
+    expect(result.hooks.get("tool.before.write")?.map((hook) => hook.actions[0])).toEqual([
+      { command: "global-first" },
+      { command: "global-second" },
+      { command: "project-first" },
+      { command: "project-second" },
+    ])
+  })
+
+  it("keeps valid hooks while reporting invalid hooks from discovered files", () => {
+    const homeDir = "/home/tester"
+    const projectDir = "/repo/project"
+    const globalPath = path.join(homeDir, ".config", "opencode", "hook", "hooks.md")
+    const projectPath = path.join(projectDir, ".opencode", "hook", "hooks.md")
+    const files = new Map([
+      [globalPath, `---
+hooks:
+  - event: tool.before.write
+    actions:
+      - command: global-valid
+  - event: invalid.event
+    actions:
+      - command: global-invalid
+---
+`],
+      [projectPath, `---
+hooks:
+  - event: tool.before.write
+    actions:
+      - command: project-valid
+  - event: session.idle
+    actions: invalid
+---
+`],
+    ])
+
+    const result = loadDiscoveredHooks({
+      projectDir,
+      homeDir,
+      platform: "linux",
+      exists: (filePath) => files.has(filePath),
+      readFile: (filePath) => files.get(filePath) ?? "",
+    })
+
+    expect(result.hooks.get("tool.before.write")?.map((hook) => hook.actions[0])).toEqual([
+      { command: "global-valid" },
+      { command: "project-valid" },
+    ])
+    expect(result.errors).toEqual([
+      expect.objectContaining({ filePath: globalPath, code: "invalid_event", path: "hooks[1].event" }),
+      expect.objectContaining({ filePath: projectPath, code: "invalid_actions", path: "hooks[1].actions" }),
+    ])
+  })
 })
