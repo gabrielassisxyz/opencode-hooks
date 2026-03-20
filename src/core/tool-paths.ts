@@ -57,6 +57,11 @@ export function getToolFileChanges(toolName: string, args: Record<string, unknow
     return patchText ? parsePatchChanges(patchText) : []
   }
 
+  if (normalized === "bash") {
+    const command = pickString(args.command, args.cmd)
+    return command ? parseBashChanges(command) : []
+  }
+
   const filePath = pickString(args.filePath, args.file_path, args.path, args.file)
   if (!filePath) {
     return []
