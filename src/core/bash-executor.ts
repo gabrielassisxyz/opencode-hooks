@@ -12,7 +12,7 @@ import {
 const TIMEOUT_EXIT_CODE = 1
 const BLOCKING_EXIT_CODE = 2
 const KILL_GRACE_PERIOD_MS = 250
-const BASH_EXECUTABLE = process.env.SHELL || "/bin/bash"
+const BASH_EXECUTABLE = "/bin/sh"
 
 export async function executeBashHook(request: BashExecutionRequest): Promise<BashHookResult> {
   const processResult = await executeBashProcess(request)
