@@ -358,6 +358,7 @@ This README includes examples or event references for every supported event:
 - `session.created`
 - `session.deleted`
 - `session.idle`
+- `file.changed`
 - `tool.before.*`
 - `tool.before.<name>`
 - `tool.after.*`
