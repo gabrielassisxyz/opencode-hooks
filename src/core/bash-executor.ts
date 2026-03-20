@@ -48,16 +48,17 @@ async function executeBashProcess(request: BashExecutionRequest): Promise<BashPr
   const executionContext = resolveExecutionContext(request.projectDir)
 
   return new Promise((resolve) => {
+    const executionCwd = executionContext.resolvedFromGit ? executionContext.worktreeDir : request.context.cwd
     const env = {
       ...process.env,
-      OPENCODE_PROJECT_DIR: executionContext.worktreeDir,
+      OPENCODE_PROJECT_DIR: executionContext.resolvedFromGit ? executionContext.worktreeDir : request.projectDir,
       OPENCODE_WORKTREE_DIR: executionContext.worktreeDir,
       OPENCODE_SESSION_ID: request.context.session_id,
       ...(executionContext.gitCommonDir ? { OPENCODE_GIT_COMMON_DIR: executionContext.gitCommonDir } : {}),
     }
 
     const child = spawn(BASH_EXECUTABLE, ["-c", request.command], {
-      cwd: executionContext.worktreeDir,
+      cwd: executionCwd,
       env,
       stdio: ["pipe", "pipe", "pipe"],
     })
@@ -171,7 +172,7 @@ function logBashOutcome(result: BashHookResult, request: BashExecutionRequest): 
   console.error(details.join(" | "))
 }
 
-function resolveExecutionContext(projectDir: string): { worktreeDir: string; gitCommonDir?: string } {
+function resolveExecutionContext(projectDir: string): { worktreeDir: string; gitCommonDir?: string; resolvedFromGit: boolean } {
   try {
     const output = execFileSync("git", ["rev-parse", "--show-toplevel", "--git-common-dir"], {
       cwd: projectDir,
@@ -185,6 +186,7 @@ function resolveExecutionContext(projectDir: string): { worktreeDir: string; git
 
     return {
       worktreeDir,
+      resolvedFromGit: true,
       ...(gitCommonDir
         ? {
             gitCommonDir: path.isAbsolute(gitCommonDir) ? gitCommonDir : path.resolve(worktreeDir, gitCommonDir),
@@ -192,6 +194,6 @@ function resolveExecutionContext(projectDir: string): { worktreeDir: string; git
         : {}),
     }
   } catch {
-    return { worktreeDir: projectDir }
+    return { worktreeDir: projectDir, resolvedFromGit: false }
   }
 }
