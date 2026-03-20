@@ -4,7 +4,7 @@ import path from "node:path"
 
 export interface HookConfigDiscoveryOptions {
   readonly projectDir?: string
-  readonly platform?: NodeJS.Platform
+  readonly platform?: string
   readonly homeDir?: string
   readonly appDataDir?: string
   readonly exists?: (filePath: string) => boolean
@@ -16,24 +16,22 @@ export interface HookConfigPaths {
 }
 
 export function resolveHookConfigPaths(options: HookConfigDiscoveryOptions = {}): HookConfigPaths {
+  const exists = options.exists ?? existsSync
   const platform = options.platform ?? process.platform
   const homeDir = options.homeDir ?? os.homedir()
   const appDataDir = options.appDataDir ?? process.env.APPDATA
   const globalConfigDir = path.join(homeDir, ".config", "opencode", "hook")
   const projectDir = options.projectDir
 
-  const global = platform === "win32" && appDataDir
-    ? path.join(globalConfigDir, "hooks.md")
-    : path.join(globalConfigDir, "hooks.md")
+  const preferredGlobal = path.join(globalConfigDir, "hooks.md")
 
   const appDataGlobal = platform === "win32" && appDataDir
     ? path.join(appDataDir, "opencode", "hook", "hooks.md")
     : undefined
 
   return {
-    global,
+    global: platform === "win32" && appDataGlobal && !exists(preferredGlobal) ? appDataGlobal : preferredGlobal,
     project: projectDir ? path.join(projectDir, ".opencode", "hook", "hooks.md") : undefined,
-    ...(platform === "win32" && !existsSync(global) && appDataGlobal ? { global: appDataGlobal } : {}),
   }
 }
 
