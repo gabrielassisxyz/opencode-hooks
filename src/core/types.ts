@@ -1,5 +1,5 @@
-export const SESSION_HOOK_EVENTS = ["session.idle", "session.created", "session.deleted"] as const
-export const HOOK_CONDITIONS = ["hasCodeChange"] as const
+export const SESSION_HOOK_EVENTS = ["session.idle", "session.created", "session.deleted", "file.changed"] as const
+export const HOOK_CONDITIONS = ["hasCodeChange", "isMainSession"] as const
 export const HOOK_SCOPES = ["all", "project"] as const
 export const HOOK_RUN_IN = ["current", "main"] as const
 
@@ -10,6 +10,29 @@ export type HookEvent = SessionHookEvent | ToolHookEvent
 export type HookCondition = (typeof HOOK_CONDITIONS)[number]
 export type HookScope = (typeof HOOK_SCOPES)[number]
 export type HookRunIn = (typeof HOOK_RUN_IN)[number]
+
+export interface CreateFileChange {
+  readonly operation: "create"
+  readonly path: string
+}
+
+export interface ModifyFileChange {
+  readonly operation: "modify"
+  readonly path: string
+}
+
+export interface DeleteFileChange {
+  readonly operation: "delete"
+  readonly path: string
+}
+
+export interface RenameFileChange {
+  readonly operation: "rename"
+  readonly fromPath: string
+  readonly toPath: string
+}
+
+export type FileChange = CreateFileChange | ModifyFileChange | DeleteFileChange | RenameFileChange
 
 export interface HookCommandActionConfig {
   readonly name: string
