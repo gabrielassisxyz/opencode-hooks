@@ -61,7 +61,7 @@ describe("createHooksRuntime", () => {
       { tool: "write", sessionID: "session-1", callID: "call-2" },
       { args: { filePath: "src/two.ts", value: "two" } },
     )
-    await runtime["tool.execute.after"]?.({ tool: "write", sessionID: "session-1", callID: "call-2" })
+    await runtime["tool.execute.after"]?.({ tool: "write", sessionID: "session-1", callID: "call-2" }, {})
 
     expect(bashEvents.map(({ event }) => event)).toEqual([
       "tool.before.*",
@@ -71,8 +71,8 @@ describe("createHooksRuntime", () => {
       "tool.after.*",
       "tool.after.write",
     ])
-    expect(bashEvents.at(-2)?.toolArgs).toEqual({ filePath: "src/two.ts", value: "two" })
-    expect(bashEvents.at(-1)?.toolArgs).toEqual({ filePath: "src/two.ts", value: "two" })
+    expect(bashEvents[bashEvents.length - 2]?.toolArgs).toEqual({ filePath: "src/two.ts", value: "two" })
+    expect(bashEvents[bashEvents.length - 1]?.toolArgs).toEqual({ filePath: "src/two.ts", value: "two" })
   })
 
   it("tracks modified paths for mutation tools and only runs session.idle hooks when code changed", async () => {
@@ -116,8 +116,8 @@ describe("createHooksRuntime", () => {
       { tool: "multiedit", sessionID: "session-1", callID: "call-doc" },
       { args: { filePath: "README.md" } },
     )
-    await runtime["tool.execute.after"]?.({ tool: "multiedit", sessionID: "session-1", callID: "call-doc" })
-    await runtime.event?.({ event: { type: "session.idle", properties: { sessionID: "session-1" } } })
+    await runtime["tool.execute.after"]?.({ tool: "multiedit", sessionID: "session-1", callID: "call-doc" }, {})
+    await runtime.event?.({ event: { type: "session.idle", properties: { sessionID: "session-1" } } } as never)
 
     expect(idleContexts).toEqual([])
 
@@ -138,8 +138,8 @@ describe("createHooksRuntime", () => {
         },
       },
     )
-    await runtime["tool.execute.after"]?.({ tool: "apply_patch", sessionID: "session-1", callID: "call-code" })
-    await runtime.event?.({ event: { type: "session.idle", properties: { sessionID: "session-1" } } })
+    await runtime["tool.execute.after"]?.({ tool: "apply_patch", sessionID: "session-1", callID: "call-code" }, {})
+    await runtime.event?.({ event: { type: "session.idle", properties: { sessionID: "session-1" } } } as never)
 
     expect(idleContexts).toEqual([["src/runtime.ts", "docs/notes.md"]])
   })
@@ -189,10 +189,10 @@ describe("createHooksRuntime", () => {
 
     const runtime = createHooksRuntime(input as never, { hooks, executeBash })
 
-    await runtime.event?.({ event: { type: "session.created", properties: { info: { id: "main-session" } } } })
-    await runtime.event?.({ event: { type: "session.created", properties: { info: { id: "child-session", parentID: "main-session" } } } })
-    await runtime.event?.({ event: { type: "session.deleted", properties: { info: { id: "main-session" } } } })
-    await runtime.event?.({ event: { type: "session.deleted", properties: { info: { id: "child-session" } } } })
+    await runtime.event?.({ event: { type: "session.created", properties: { info: { id: "main-session" } } } } as never)
+    await runtime.event?.({ event: { type: "session.created", properties: { info: { id: "child-session", parentID: "main-session" } } } } as never)
+    await runtime.event?.({ event: { type: "session.deleted", properties: { info: { id: "main-session" } } } } as never)
+    await runtime.event?.({ event: { type: "session.deleted", properties: { info: { id: "child-session" } } } } as never)
 
     expect(triggeredEvents).toEqual([
       "session.created:main-session",
