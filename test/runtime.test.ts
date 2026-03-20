@@ -133,7 +133,7 @@ describe("createHooksRuntime", () => {
         args: {
           patchText: [
             "*** Begin Patch",
-            "*** Update File: src/runtime.ts",
+            "*** Update File: schema/query.graphql",
             "@@",
             "-old",
             "+new",
@@ -150,7 +150,7 @@ describe("createHooksRuntime", () => {
     )
     await runtime.event?.({ event: { type: "session.idle", properties: { sessionID: "session-1" } } } as never)
 
-    expect(idleContexts).toEqual([["src/runtime.ts", "docs/notes.md"]])
+    expect(idleContexts).toEqual([["schema/query.graphql", "docs/notes.md"]])
   })
 
   it("tracks write, edit, multiedit, and apply_patch paths for session.idle and clears them after dispatch", async () => {
