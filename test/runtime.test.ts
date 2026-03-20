@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest"
 
 import { createHooksRuntime } from "../src/core/runtime.ts"
-import type { HookMap } from "../src/core/types.ts"
+import type { HookConfig, HookEvent, HookMap } from "../src/core/types.ts"
 
 function createMockPluginInput() {
   const command = vi.fn(async () => ({ data: {}, response: { status: 200 } }))
@@ -25,6 +25,15 @@ function createMockPluginInput() {
   }
 }
 
+function createHook(event: HookEvent, config: Omit<HookConfig, "event" | "scope" | "runIn">): HookConfig {
+  return {
+    event,
+    scope: "all",
+    runIn: "current",
+    ...config,
+  }
+}
+
 describe("createHooksRuntime", () => {
   it("dispatches wildcard then specific tool hooks and prefers after-event args over cached before args", async () => {
     const { input } = createMockPluginInput()
@@ -45,10 +54,10 @@ describe("createHooksRuntime", () => {
     })
 
     const hooks: HookMap = new Map([
-      ["tool.before.*", [{ event: "tool.before.*", actions: [{ bash: "hook" }], source: { filePath: "a", index: 0 } }]],
-      [["tool.before.write" as const][0], [{ event: "tool.before.write", actions: [{ bash: "hook" }], source: { filePath: "a", index: 1 } }]],
-      ["tool.after.*", [{ event: "tool.after.*", actions: [{ bash: "hook" }], source: { filePath: "a", index: 2 } }]],
-      [["tool.after.write" as const][0], [{ event: "tool.after.write", actions: [{ bash: "hook" }], source: { filePath: "a", index: 3 } }]],
+      ["tool.before.*", [createHook("tool.before.*", { actions: [{ bash: "hook" }], source: { filePath: "a", index: 0 } })]],
+      [["tool.before.write" as const][0], [createHook("tool.before.write", { actions: [{ bash: "hook" }], source: { filePath: "a", index: 1 } })]],
+      ["tool.after.*", [createHook("tool.after.*", { actions: [{ bash: "hook" }], source: { filePath: "a", index: 2 } })]],
+      [["tool.after.write" as const][0], [createHook("tool.after.write", { actions: [{ bash: "hook" }], source: { filePath: "a", index: 3 } })]],
     ])
 
     const runtime = createHooksRuntime(input as never, { hooks, executeBash })
