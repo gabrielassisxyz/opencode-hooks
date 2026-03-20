@@ -10,7 +10,9 @@ interface SessionRecord {
   rootSessionID?: string
   deleted: boolean
   changes: FileChange[]
-   changeCounts: Map<string, number>
+   changeKeys: Set<string>
+   activeIdleDispatchKeys?: Set<string>
+   replayedDuringIdleKeys: Set<string>
 }
 
 export type SessionScope = "all" | "main" | "child"
@@ -58,7 +60,9 @@ export class SessionStateStore {
     const record = this.getOrCreateSession(sessionID)
     record.deleted = true
     record.changes = []
-    record.changeCounts.clear()
+    record.changeKeys.clear()
+    record.activeIdleDispatchKeys = undefined
+    record.replayedDuringIdleKeys.clear()
 
     for (const [callID, pending] of this.pendingToolCalls) {
       if (pending.sessionID === sessionID) {
@@ -85,11 +89,14 @@ export class SessionStateStore {
     const record = this.getOrCreateSession(sessionID)
     for (const change of changes) {
       const key = serializeFileChange(change)
-      const existingCount = record.changeCounts.get(key) ?? 0
-      if (existingCount === 0) {
+      if (record.activeIdleDispatchKeys?.has(key)) {
+        record.replayedDuringIdleKeys.add(key)
+      }
+
+      if (!record.changeKeys.has(key)) {
+        record.changeKeys.add(key)
         record.changes.push(change)
       }
-      record.changeCounts.set(key, existingCount + 1)
     }
   }
 
@@ -106,37 +113,56 @@ export class SessionStateStore {
     return getChangedPaths(this.getFileChanges(sessionID))
   }
 
+  beginIdleDispatch(sessionID: string, changes: readonly FileChange[]): void {
+    const record = this.getOrCreateSession(sessionID)
+    record.activeIdleDispatchKeys = new Set(changes.map((change) => serializeFileChange(change)))
+    record.replayedDuringIdleKeys.clear()
+  }
+
   consumeFileChanges(sessionID: string, changes: readonly FileChange[]): void {
     const record = this.sessions.get(sessionID)
     if (!record) {
       return
     }
 
-    const consumedKeys = new Set<string>()
+    const replayedChanges = new Map<string, FileChange>()
 
     for (const change of changes) {
       const key = serializeFileChange(change)
-      if (consumedKeys.has(key)) {
-        continue
-      }
+      record.changeKeys.delete(key)
 
-      consumedKeys.add(key)
-      const remainingCount = (record.changeCounts.get(key) ?? 0) - 1
-      if (remainingCount > 0) {
-        record.changeCounts.set(key, remainingCount)
-        continue
+      if (record.replayedDuringIdleKeys.has(key)) {
+        replayedChanges.set(key, change)
       }
-
-      record.changeCounts.delete(key)
     }
 
-    record.changes = record.changes.filter((change) => record.changeCounts.has(serializeFileChange(change)))
+    record.changes = record.changes.filter((change) => record.changeKeys.has(serializeFileChange(change)))
+
+    for (const [key, change] of replayedChanges) {
+      if (!record.changeKeys.has(key)) {
+        record.changeKeys.add(key)
+        record.changes.push(change)
+      }
+    }
+
+    record.activeIdleDispatchKeys = undefined
+    record.replayedDuringIdleKeys.clear()
+  }
+
+  cancelIdleDispatch(sessionID: string): void {
+    const record = this.sessions.get(sessionID)
+    if (!record) {
+      return
+    }
+
+    record.activeIdleDispatchKeys = undefined
+    record.replayedDuringIdleKeys.clear()
   }
 
   private getOrCreateSession(sessionID: string): SessionRecord {
     let record = this.sessions.get(sessionID)
     if (!record) {
-      record = { deleted: false, changes: [], changeCounts: new Map() }
+      record = { deleted: false, changes: [], changeKeys: new Set(), replayedDuringIdleKeys: new Set() }
       this.sessions.set(sessionID, record)
     }
     return record
