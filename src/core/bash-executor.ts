@@ -213,7 +213,7 @@ function resolveExecutionContext(projectDir: string): { worktreeDir: string; git
       resolvedFromGit: true,
       ...(gitCommonDir
         ? {
-            gitCommonDir: path.isAbsolute(gitCommonDir) ? gitCommonDir : path.resolve(worktreeDir, gitCommonDir),
+            gitCommonDir: path.isAbsolute(gitCommonDir) ? gitCommonDir : path.resolve(projectDir, gitCommonDir),
           }
         : {}),
     }

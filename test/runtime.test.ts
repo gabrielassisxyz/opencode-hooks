@@ -762,6 +762,80 @@ describe("createHooksRuntime", () => {
     expect(executeBash.mock.calls[1]?.[0].context.tool_args).toEqual({})
   })
 
+  it("serializes overlapping blocking tool.before hooks instead of bypassing queued enforcement", async () => {
+    const { input } = createMockPluginInput()
+    let runtime: ReturnType<typeof createHooksRuntime>
+    let invocationCount = 0
+    let nestedBeforePromise: Promise<void> | undefined
+
+    const executeBash = vi.fn(async ({ context }) => {
+      if (context.event !== "tool.before.write") {
+        return {
+          command: "hook",
+          stdout: "",
+          stderr: "",
+          durationMs: 1,
+          exitCode: 0,
+          signal: null,
+          timedOut: false,
+          status: "success" as const,
+          blocking: false,
+        }
+      }
+
+      invocationCount += 1
+
+      if (invocationCount === 1) {
+        nestedBeforePromise = runtime["tool.execute.before"]?.(
+          { tool: "write", sessionID: "session-1", callID: "call-nested" },
+          { args: { filePath: "src/nested.ts", value: "nested" } },
+        )
+
+        await Promise.resolve()
+
+        return {
+          command: "hook",
+          stdout: "",
+          stderr: "",
+          durationMs: 1,
+          exitCode: 0,
+          signal: null,
+          timedOut: false,
+          status: "success" as const,
+          blocking: false,
+        }
+      }
+
+      return {
+        command: "hook",
+        stdout: "",
+        stderr: "blocked:nested-before",
+        durationMs: 1,
+        exitCode: 2,
+        signal: null,
+        timedOut: false,
+        status: "blocked" as const,
+        blocking: true,
+      }
+    })
+
+    const hooks: HookMap = new Map([
+      [["tool.before.write" as const][0], [createHook("tool.before.write", { actions: [{ bash: "hook" }], source: { filePath: "a", index: 0 } })]],
+    ])
+
+    runtime = createHooksRuntime(input as never, { hooks, executeBash })
+
+    await expect(
+      runtime["tool.execute.before"]?.(
+        { tool: "write", sessionID: "session-1", callID: "call-initial" },
+        { args: { filePath: "src/initial.ts", value: "initial" } },
+      ),
+    ).resolves.toBeUndefined()
+
+    await expect(nestedBeforePromise).rejects.toThrow("blocked:nested-before")
+    expect(invocationCount).toBe(2)
+  })
+
   it("does not block tools when command actions or scope lookups fail", async () => {
     const { input, command, get } = createMockPluginInput()
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})

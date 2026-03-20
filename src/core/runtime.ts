@@ -138,6 +138,8 @@ interface DispatchState {
 interface DispatchRequest {
   readonly context: RuntimeActionContext
   readonly options: { canBlock?: boolean }
+  readonly resolve: (result: HookExecutionResult) => void
+  readonly reject: (error: unknown) => void
 }
 
 type ExecuteBashHook = (request: BashExecutionRequest) => ReturnType<typeof executeBashHook>
@@ -381,22 +383,15 @@ async function dispatchHooks(
   }
 
   const dispatchKey = `${event}:${sessionID}`
-  const dispatchState = dispatchStates.get(dispatchKey)
-  if (dispatchState?.active) {
-    dispatchState.pending.push({ context, options })
-    return { blocked: false }
-  }
+  const dispatchState = dispatchStates.get(dispatchKey) ?? { active: false, pending: [] }
+  dispatchStates.set(dispatchKey, dispatchState)
 
-  const currentState = dispatchState ?? { active: false, pending: [] }
-  currentState.active = true
-  dispatchStates.set(dispatchKey, currentState)
+  const result = await new Promise<HookExecutionResult>((resolve, reject) => {
+    dispatchState.pending.push({ context, options, resolve, reject })
+  })
 
-  try {
-    const queue: DispatchRequest[] = [{ context, options }]
-
-    while (queue.length > 0) {
-      const request = queue.shift()!
-
+  if (!dispatchState.active) {
+    void processDispatchQueue(dispatchState, async (request) => {
       for (const hook of eventHooks) {
         const result = await executeHook(hook, state, input, runBashHook, sessionID, request.context, request.options, activeActionTargets)
         if (result.blocked) {
@@ -404,17 +399,37 @@ async function dispatchHooks(
         }
       }
 
-      if (currentState.pending.length > 0) {
-        queue.push(...currentState.pending)
-        currentState.pending = []
+      return { blocked: false }
+    }).finally(() => {
+      dispatchStates.delete(dispatchKey)
+    })
+  }
+
+  return result
+}
+
+async function processDispatchQueue(
+  dispatchState: DispatchState,
+  executeRequest: (request: DispatchRequest) => Promise<HookExecutionResult>,
+): Promise<void> {
+  if (dispatchState.active) {
+    return
+  }
+
+  dispatchState.active = true
+
+  try {
+    while (dispatchState.pending.length > 0) {
+      const request = dispatchState.pending.shift()!
+
+      try {
+        request.resolve(await executeRequest(request))
+      } catch (error) {
+        request.reject(error)
       }
     }
-
-    return { blocked: false }
   } finally {
-    currentState.active = false
-    currentState.pending = []
-    dispatchStates.delete(dispatchKey)
+    dispatchState.active = false
   }
 }
 

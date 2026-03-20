@@ -136,7 +136,7 @@ describe("executeBashHook", () => {
     expect(JSON.parse(result.stdout)).toEqual({
       projectDir,
       worktreeDir: repoDir,
-      gitCommonDir: expect.any(String),
+      gitCommonDir: path.join(repoDir, ".git"),
     })
   })
 
