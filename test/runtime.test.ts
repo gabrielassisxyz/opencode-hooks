@@ -662,7 +662,7 @@ describe("createHooksRuntime", () => {
     )
 
     expect(observedAfterContexts).toEqual([
-      { files: ["src/initial-after.ts"], toolArgs: {} },
+      { files: ["src/initial-after.ts"], toolArgs: { filePath: "src/initial-after.ts", value: "initial-after" } },
       { files: ["src/queued-after-final.ts"], toolArgs: { filePath: "src/queued-after-final.ts", value: "queued-after-final" } },
     ])
   })
