@@ -1,6 +1,7 @@
 import os from "node:os"
+import path from "node:path"
 
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 
 import { executeBashHook, mapBashProcessResultToHookResult } from "../src/core/bash-executor.ts"
 import { DEFAULT_BASH_TIMEOUT, type BashHookContext, type BashProcessResult } from "../src/core/bash-types.ts"
@@ -38,6 +39,7 @@ describe("executeBashHook", () => {
   })
 
   it("marks timed out processes as non-blocking failures", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
     const result = await executeBashHook({
       command: "sleep 1",
       context: baseContext,
@@ -49,6 +51,43 @@ describe("executeBashHook", () => {
     expect(result.blocking).toBe(false)
     expect(result.exitCode).toBe(1)
     expect(result.stderr).toContain("Command timed out after 50ms")
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("Bash hook timed_out"))
+    errorSpy.mockRestore()
+  })
+
+  it("logs non-blocking bash failures with command details", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+    const result = await executeBashHook({
+      command: "printf 'broken' >&2; exit 1",
+      context: baseContext,
+      projectDir: "/repo/project",
+    })
+
+    expect(result.status).toBe("failed")
+    expect(result.blocking).toBe(false)
+    expect(result.stderr).toBe("broken")
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('command="printf \'broken\' >&2; exit 1"'))
+    errorSpy.mockRestore()
+  })
+
+  it("uses worktree-aware env for git repositories", async () => {
+    const repoDir = process.cwd()
+    const result = await executeBashHook({
+      command:
+        "node -e 'process.stdout.write(JSON.stringify({projectDir:process.env.OPENCODE_PROJECT_DIR,worktreeDir:process.env.OPENCODE_WORKTREE_DIR,gitCommonDir:process.env.OPENCODE_GIT_COMMON_DIR}))'",
+      context: {
+        ...baseContext,
+        cwd: path.join(repoDir, "src"),
+      },
+      projectDir: path.join(repoDir, "src"),
+    })
+
+    expect(result.status).toBe("success")
+    expect(JSON.parse(result.stdout)).toEqual({
+      projectDir: repoDir,
+      worktreeDir: repoDir,
+      gitCommonDir: expect.any(String),
+    })
   })
 })
 
