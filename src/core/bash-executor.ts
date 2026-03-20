@@ -12,7 +12,9 @@ import {
 const TIMEOUT_EXIT_CODE = 1
 const BLOCKING_EXIT_CODE = 2
 const KILL_GRACE_PERIOD_MS = 250
-const BASH_EXECUTABLE = "/bin/sh"
+const BASH_EXECUTABLE = process.env.OPENCODE_HOOKS_BASH_EXECUTABLE || "bash"
+const MAX_LOG_FIELD_LENGTH = 400
+const REDACTED = "[REDACTED]"
 
 export async function executeBashHook(request: BashExecutionRequest): Promise<BashHookResult> {
   const processResult = await executeBashProcess(request)
@@ -48,17 +50,16 @@ async function executeBashProcess(request: BashExecutionRequest): Promise<BashPr
   const executionContext = resolveExecutionContext(request.projectDir)
 
   return new Promise((resolve) => {
-    const executionCwd = executionContext.resolvedFromGit ? executionContext.worktreeDir : request.context.cwd
     const env = {
       ...process.env,
-      OPENCODE_PROJECT_DIR: executionContext.resolvedFromGit ? executionContext.worktreeDir : request.projectDir,
+      OPENCODE_PROJECT_DIR: request.projectDir,
       OPENCODE_WORKTREE_DIR: executionContext.worktreeDir,
       OPENCODE_SESSION_ID: request.context.session_id,
       ...(executionContext.gitCommonDir ? { OPENCODE_GIT_COMMON_DIR: executionContext.gitCommonDir } : {}),
     }
 
     const child = spawn(BASH_EXECUTABLE, ["-c", request.command], {
-      cwd: executionCwd,
+      cwd: request.context.cwd,
       env,
       stdio: ["pipe", "pipe", "pipe"],
     })
@@ -158,18 +159,33 @@ function logBashOutcome(result: BashHookResult, request: BashExecutionRequest): 
     `exitCode=${result.exitCode}`,
     `signal=${result.signal ?? "none"}`,
     `durationMs=${result.durationMs}`,
-    `command=${JSON.stringify(result.command)}`,
+    `command=${JSON.stringify(sanitizeLogValue(result.command))}`,
   ]
 
   if (result.stderr.trim()) {
-    details.push(`stderr=${JSON.stringify(result.stderr.trim())}`)
+    details.push(`stderr=${JSON.stringify(sanitizeLogValue(result.stderr.trim()))}`)
   }
 
   if (result.stdout.trim()) {
-    details.push(`stdout=${JSON.stringify(result.stdout.trim())}`)
+    details.push(`stdout=${JSON.stringify(sanitizeLogValue(result.stdout.trim()))}`)
   }
 
   console.error(details.join(" | "))
+}
+
+function sanitizeLogValue(value: string): string {
+  const redacted = redactSensitiveContent(value)
+  if (redacted.length <= MAX_LOG_FIELD_LENGTH) {
+    return redacted
+  }
+
+  return `${redacted.slice(0, MAX_LOG_FIELD_LENGTH)}… [truncated ${redacted.length - MAX_LOG_FIELD_LENGTH} chars]`
+}
+
+function redactSensitiveContent(value: string): string {
+  return value
+    .replace(/\b(authorization\s*:\s*bearer\s+)([^\s]+)/gi, `$1${REDACTED}`)
+    .replace(/\b((?:api[-_ ]?key|token|secret|password|passwd|pwd)[^\S\r\n]*[:=][^\S\r\n]*)([^\s"'`]+)/gi, `$1${REDACTED}`)
 }
 
 function resolveExecutionContext(projectDir: string): { worktreeDir: string; gitCommonDir?: string; resolvedFromGit: boolean } {
