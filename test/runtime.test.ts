@@ -233,6 +233,7 @@ describe("createHooksRuntime", () => {
   it("retains modified paths when session.idle dispatch fails and clears them after a later success", async () => {
     const { input } = createMockPluginInput()
     const idleContexts: Array<readonly string[] | undefined> = []
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
     let shouldFailIdle = true
     const executeBash = vi.fn(async ({ context }) => {
       if (context.event === "session.idle") {
@@ -281,11 +282,14 @@ describe("createHooksRuntime", () => {
       { title: "", output: "", metadata: {} },
     )
 
-    await runtime.event?.({ event: { type: "session.idle", properties: { sessionID: "session-1" } } } as never)
+    await expect(runtime.event?.({ event: { type: "session.idle", properties: { sessionID: "session-1" } } } as never)).rejects.toThrow(
+      "idle failed",
+    )
     await runtime.event?.({ event: { type: "session.idle", properties: { sessionID: "session-1" } } } as never)
     await runtime.event?.({ event: { type: "session.idle", properties: { sessionID: "session-1" } } } as never)
 
     expect(idleContexts).toEqual([["src/retry.ts"], ["src/retry.ts"]])
+    errorSpy.mockRestore()
   })
 
   it("blocks tool.before execution when a hook returns exit code 2", async () => {
@@ -331,6 +335,7 @@ describe("createHooksRuntime", () => {
 
   it("does not block tools when command actions or isMainSession lookups fail", async () => {
     const { input, command, get } = createMockPluginInput()
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
     command.mockRejectedValueOnce(new Error("command failed"))
     get.mockRejectedValueOnce(new Error("lookup failed"))
 
@@ -386,6 +391,7 @@ describe("createHooksRuntime", () => {
 
     expect(bashEvents).toEqual(["tool.before.*", "tool.after.write"])
     expect(get).toHaveBeenCalledWith({ path: { id: "session-1" } })
+    errorSpy.mockRestore()
   })
 
   it("evaluates isMainSession from session state seeded by lifecycle events", async () => {
