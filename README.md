@@ -128,6 +128,39 @@ Tool hook order for a tool named `write`:
 4. `tool.after.*`
 5. `tool.after.write`
 
+### What tool names can I use?
+
+`tool.before.<name>` and `tool.after.<name>` match the actual OpenCode tool name emitted at runtime.
+
+Examples:
+
+- `tool.before.write` runs before the `write` tool
+- `tool.after.edit` runs after the `edit` tool
+- `tool.before.multiedit` runs before the `multiedit` tool
+- `tool.after.apply_patch` runs after the `apply_patch` tool
+
+Wildcard hooks are the catch-all option:
+
+- `tool.before.*` runs before every tool
+- `tool.after.*` runs after every tool
+
+Common built-in tool names in OpenCode include tools such as:
+
+| Category | Common tool names |
+|---|---|
+| File and shell work | `bash`, `read`, `write`, `edit`, `grep`, `glob`, `list` |
+| Planning and workflow | `question`, `task`, `skill`, `todowrite`, `todoread` |
+| Search and web | `webfetch`, `websearch`, `codesearch` |
+| Patch and code intelligence | `patch`, `lsp` |
+| Common file-mutation names seen by this plugin | `write`, `edit`, `multiedit`, `apply_patch` |
+
+Important caveats:
+
+- the exact available tool set can vary by OpenCode version, enabled experimental features, providers, custom tools, and MCP servers
+- some environments expose tool names that differ slightly from the built-in docs, such as `apply_patch`
+- if you want a hook to apply to everything, prefer `tool.before.*` or `tool.after.*`
+- if you want a hook for one specific tool, use the exact emitted tool name, such as `write`, `edit`, `multiedit`, or `apply_patch`
+
 ## Conditions
 
 All configured conditions must pass for a hook to run.
@@ -139,7 +172,9 @@ All configured conditions must pass for a hook to run.
 
 Extensions treated as code by `hasCodeChange`:
 
-`ts`, `tsx`, `js`, `jsx`, `mjs`, `cjs`, `json`, `yml`, `yaml`, `toml`, `css`, `scss`, `sass`, `less`, `html`, `vue`, `svelte`, `go`, `rs`, `c`, `h`, `cpp`, `cc`, `cxx`, `hpp`, `java`, `py`, `rb`, `php`, `sh`, `bash`, `kt`, `kts`, `swift`, `m`, `mm`, `cs`, `fs`, `scala`, `clj`, `hs`, `lua`.
+`ts`, `tsx`, `mts`, `cts`, `js`, `jsx`, `mjs`, `cjs`, `json`, `jsonc`, `json5`, `yml`, `yaml`, `toml`, `xml`, `ini`, `cfg`, `conf`, `properties`, `css`, `scss`, `sass`, `less`, `html`, `vue`, `svelte`, `astro`, `mdx`, `graphql`, `gql`, `proto`, `sql`, `prisma`, `go`, `rs`, `zig`, `c`, `h`, `cpp`, `cc`, `cxx`, `hpp`, `java`, `groovy`, `gradle`, `py`, `rb`, `php`, `sh`, `bash`, `zsh`, `fish`, `ps1`, `psm1`, `psd1`, `bat`, `cmd`, `kt`, `kts`, `swift`, `m`, `mm`, `cs`, `fs`, `scala`, `clj`, `hs`, `lua`, `dart`, `elm`, `ex`, `exs`, `erl`, `hrl`, `nim`, `nix`, `r`, `rkt`, `tf`, `tfvars`.
+
+Matching is extension-based in v1, so extensionless filenames such as `Dockerfile` are not currently treated as code by `hasCodeChange`.
 
 ## Actions
 
