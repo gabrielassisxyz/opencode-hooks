@@ -175,7 +175,7 @@ Generate a commit message for this edit."
 
   if command -v opencode >/dev/null 2>&1; then
     local generated cleaned
-    generated="$(timeout 25 env "$OPENCODE_CHILD_GUARD_VAR=1" NO_COLOR=1 TERM=dumb opencode run "${SYSTEM_PROMPT}
+    generated="$(run_with_timeout 25 env "$OPENCODE_CHILD_GUARD_VAR=1" NO_COLOR=1 TERM=dumb opencode run "${SYSTEM_PROMPT}
 
 ${user_msg}" --model "$OPENCODE_COMMIT_MODEL" --agent "$OPENCODE_COMMIT_AGENT" 2>/dev/null || true)"
     if [[ -n "$generated" ]]; then

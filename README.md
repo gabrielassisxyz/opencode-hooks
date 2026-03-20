@@ -1,6 +1,6 @@
 # opencode-hooks
 
-Standalone OpenCode plugin that loads hook definitions from `hooks.md` files and runs command, tool, or bash actions on session and tool lifecycle events.
+Standalone OpenCode plugin that loads hook definitions from `hooks.yaml` files and runs command, tool, or bash actions on session and tool lifecycle events.
 
 ## Installation
 
@@ -31,7 +31,7 @@ The plugin entrypoint is `src/index.ts`, which exports the OpenCode `Plugin` imp
 The runtime:
 
 - discovers hook configs from standard OpenCode hook locations
-- parses YAML frontmatter from `hooks.md`
+- parses `hooks.yaml`
 - validates supported events, conditions, and action shapes
 - dispatches hooks for session lifecycle events and tool lifecycle events
 - lets `tool.before.*` hooks block a tool when a bash action exits with code `2`
@@ -43,8 +43,8 @@ Hooks are merged from global and project locations.
 
 | Platform | Global config | Project config |
 |---|---|---|
-| macOS / Linux | `~/.config/opencode/hook/hooks.md` | `<project>/.opencode/hook/hooks.md` |
-| Windows | `~/.config/opencode/hook/hooks.md` preferred, otherwise `%APPDATA%/opencode/hook/hooks.md` | `<project>/.opencode/hook/hooks.md` |
+| macOS / Linux | `~/.config/opencode/hook/hooks.yaml` | `<project>/.opencode/hook/hooks.yaml` |
+| Windows | `~/.config/opencode/hook/hooks.yaml` preferred, otherwise `%APPDATA%/opencode/hook/hooks.yaml` | `<project>/.opencode/hook/hooks.yaml` |
 
 Windows paths are supported for config discovery, but bash actions still require a working `bash` runtime on the machine where OpenCode loads the plugin.
 
@@ -55,19 +55,18 @@ Behavior:
 - matching hooks are combined, not overridden
 - only existing files are loaded
 
-## hooks.md format
+## hooks.yaml format
 
-Each config file must start with YAML frontmatter delimited by `---` and must define a top-level `hooks` array.
+Each config file must define a top-level `hooks` array.
 
-```markdown
----
+```yaml
 hooks:
   - event: session.idle
-    conditions: [hasCodeChange, isMainSession]
+    scope: main
+    conditions: [hasCodeChange]
     actions:
       - bash: "npm run lint --fix"
       - command: simplify-changes
----
 ```
 
 ### Frontmatter schema
@@ -75,8 +74,9 @@ hooks:
 ```yaml
 hooks:
   - event: <hook-event>
+    scope: <all|main|child>   # optional, defaults to all
+    runIn: <current|main>     # optional, defaults to current
     conditions:            # optional
-      - isMainSession
       - hasCodeChange
     actions:               # required, non-empty
       - command: <string>
@@ -94,9 +94,10 @@ hooks:
 
 Validation rules enforced by the runtime:
 
-- frontmatter must parse to an object
 - `hooks` must exist and be an array
 - each hook must be an object with a supported `event`
+- `scope`, if present, must be `all`, `main`, or `child`
+- `runIn`, if present, must be `current` or `main`
 - `conditions`, if present, must be an array of supported condition names
 - `actions` must be a non-empty array
 - each action must define exactly one of `command`, `tool`, or `bash`
@@ -119,6 +120,7 @@ Validation rules enforced by the runtime:
 | `tool.before.<name>` | Before a specific tool, such as `tool.before.write` |
 | `tool.after.*` | After every tool execution |
 | `tool.after.<name>` | After a specific tool, such as `tool.after.edit` |
+| `file.changed` | After a mutation tool reports file changes |
 
 Tool hook order for a tool named `write`:
 
@@ -167,8 +169,9 @@ All configured conditions must pass for a hook to run.
 
 | Condition | Meaning |
 |---|---|
-| `isMainSession` | Run only for the main session, not child sessions |
 | `hasCodeChange` | Run only when tracked modified files include at least one supported code extension |
+
+Use `scope: main` when you want a hook to run only for the root session, or `scope: child` when you only want child-session events.
 
 Extensions treated as code by `hasCodeChange`:
 
@@ -277,7 +280,11 @@ Only `tool.before.*` and `tool.before.<name>` hooks can block tool execution.
 
 - hooks for the same event run in declaration order
 - global hooks are appended before project hooks for the same event
-- command action failures, tool action failures, and `isMainSession` lookup failures are logged and do not block tool execution
+- the runtime re-reads discovered `hooks.yaml` files at the start of each hook entrypoint (`tool.execute.before`, `tool.execute.after`, and runtime `event` handling), so a saved config edit is picked up on the next runtime event without restarting the plugin
+- reloads are deterministic: the runtime only switches to a new config after the full discovered config set parses and validates successfully
+- if a new `hooks.yaml` edit is invalid, the runtime logs the validation error and keeps running the last known good hook set instead of disabling hooks
+- once the config is fixed and saved, the next runtime event activates the new hook set automatically
+- command action failures, tool action failures, and scope lookup failures are logged and do not block tool execution
 - action failures are logged and later actions continue unless a blocking `tool.before` bash action exits with `2`
 - `session.idle` only sees files tracked from OpenCode mutation tools in the current session
 - after successful `session.idle` dispatch completes, that session's tracked modified-file list is cleared
@@ -322,16 +329,14 @@ See [`examples/hooks.md`](examples/hooks.md) for a copy-pasteable operator guide
 
 ### Minimal project-local file
 
-Create `<project>/.opencode/hook/hooks.md`:
+Create `<project>/.opencode/hook/hooks.yaml`:
 
-```markdown
----
+```yaml
 hooks:
   - event: session.idle
     conditions: [hasCodeChange]
     actions:
       - bash: "npm test"
----
 ```
 
 ### Review-on-session-start
@@ -339,7 +344,7 @@ hooks:
 ```yaml
 hooks:
   - event: session.created
-    conditions: [isMainSession]
+    scope: main
     actions:
       - command:
           name: review-pr
@@ -367,7 +372,7 @@ This package intentionally does **not** try to do the following in v1:
 - provide per-hook retries, concurrency controls, or scheduling
 - track arbitrary filesystem changes outside OpenCode mutation tools
 - treat non-bash actions as blocking; only `tool.before` bash hooks can block
-- add a separate plugin-specific config file beyond standard `hooks.md` locations
+- add a separate plugin-specific config file beyond standard `hooks.yaml` locations
 
 ## Development
 
