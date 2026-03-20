@@ -9,11 +9,12 @@ import { loadDiscoveredHooks, parseHooksFile } from "../src/core/load-hooks.ts"
 describe("parseHooksFile", () => {
   it("parses supported hook schema and preserves declaration order", () => {
     const result = parseHooksFile(
-      "/repo/.opencode/hook/hooks.md",
-      `---
-hooks:
+      "/repo/.opencode/hook/hooks.yaml",
+      `hooks:
   - event: tool.before.*
-    conditions: [isMainSession, hasCodeChange]
+    scope: project
+    runIn: main
+    conditions: [hasCodeChange]
     actions:
       - bash:
           command: npm test
@@ -27,8 +28,6 @@ hooks:
           name: bash
           args:
             command: echo ready
----
-body ignored
 `,
     )
 
@@ -39,8 +38,10 @@ body ignored
     const toolHook = result.hooks.get("tool.before.*")?.[0]
     expect(toolHook).toMatchObject({
       event: "tool.before.*",
-      conditions: ["isMainSession", "hasCodeChange"],
-      source: { filePath: "/repo/.opencode/hook/hooks.md", index: 0 },
+      scope: "project",
+      runIn: "main",
+      conditions: ["hasCodeChange"],
+      source: { filePath: "/repo/.opencode/hook/hooks.yaml", index: 0 },
     })
     expect(toolHook?.actions).toEqual([
       { bash: { command: "npm test", timeout: 30000 } },
@@ -50,30 +51,53 @@ body ignored
 
   it("rejects invalid hook entries without crashing", () => {
     const result = parseHooksFile(
-      "/repo/.opencode/hook/hooks.md",
-      `---
-hooks:
+      "/repo/.opencode/hook/hooks.yaml",
+      `hooks:
   - event: nope
     actions:
       - command: review-pr
   - event: session.idle
-    conditions: mainOnly
+    conditions: [isMainSession]
     actions:
       - bash:
           command: npm test
           timeout: fast
   - event: session.created
     actions: invalid
----
 `,
     )
 
     expect(Array.from(result.hooks.values()).flat()).toEqual([])
     expect(result.errors).toEqual([
       expect.objectContaining({ code: "invalid_event", path: "hooks[0].event" }),
-      expect.objectContaining({ code: "invalid_conditions", path: "hooks[1].conditions" }),
+      expect.objectContaining({ code: "invalid_conditions", path: "hooks[1].conditions[0]" }),
       expect.objectContaining({ code: "invalid_action", path: "hooks[1].actions[0].bash" }),
       expect.objectContaining({ code: "invalid_actions", path: "hooks[2].actions" }),
+    ])
+  })
+
+  it("applies v2 defaults and points top-level validation errors at exact keys", () => {
+    const result = parseHooksFile(
+      "/repo/.opencode/hook/hooks.yaml",
+      `hooks:
+  - event: session.idle
+    actions:
+      - command: simplify-changes
+`,
+    )
+
+    expect(result.errors).toEqual([])
+    expect(result.hooks.get("session.idle")?.[0]).toMatchObject({
+      scope: "all",
+      runIn: "current",
+    })
+
+    expect(parseHooksFile("/repo/.opencode/hook/hooks.yaml", "notHooks: []").errors).toEqual([
+      expect.objectContaining({ code: "missing_hooks", path: "hooks" }),
+    ])
+
+    expect(parseHooksFile("/repo/.opencode/hook/hooks.yaml", "hooks: invalid").errors).toEqual([
+      expect.objectContaining({ code: "invalid_hooks", path: "hooks" }),
     ])
   })
 })
