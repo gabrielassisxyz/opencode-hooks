@@ -138,8 +138,8 @@ interface DispatchState {
 interface DispatchRequest {
   readonly context: RuntimeActionContext
   readonly options: { canBlock?: boolean }
-  readonly resolve: (result: HookExecutionResult) => void
-  readonly reject: (error: unknown) => void
+  readonly resolve?: (result: HookExecutionResult) => void
+  readonly reject?: (error: unknown) => void
 }
 
 type ExecuteBashHook = (request: BashExecutionRequest) => ReturnType<typeof executeBashHook>
@@ -383,53 +383,73 @@ async function dispatchHooks(
   }
 
   const dispatchKey = `${event}:${sessionID}`
-  const dispatchState = dispatchStates.get(dispatchKey) ?? { active: false, pending: [] }
-  dispatchStates.set(dispatchKey, dispatchState)
-
-  const resultPromise = new Promise<HookExecutionResult>((resolve, reject) => {
-    dispatchState.pending.push({ context, options, resolve, reject })
-  })
-
-  if (!dispatchState.active) {
-    void processDispatchQueue(dispatchState, async (request) => {
-      for (const hook of eventHooks) {
-        const result = await executeHook(hook, state, input, runBashHook, sessionID, request.context, request.options, activeActionTargets)
-        if (result.blocked) {
-          return result
-        }
-      }
-
+  const dispatchState = dispatchStates.get(dispatchKey)
+  if (dispatchState?.active) {
+    if (!options.canBlock) {
+      dispatchState.pending.push({ context, options })
       return { blocked: false }
-    }).finally(() => {
-      dispatchStates.delete(dispatchKey)
+    }
+
+    return await new Promise<HookExecutionResult>((resolve, reject) => {
+      dispatchState.pending.push({ context, options, resolve, reject })
     })
   }
 
-  return await resultPromise
-}
+  const currentState = dispatchState ?? { active: false, pending: [] }
+  currentState.active = true
+  dispatchStates.set(dispatchKey, currentState)
 
-async function processDispatchQueue(
-  dispatchState: DispatchState,
-  executeRequest: (request: DispatchRequest) => Promise<HookExecutionResult>,
-): Promise<void> {
-  if (dispatchState.active) {
-    return
-  }
-
-  dispatchState.active = true
+  let currentResult: HookExecutionResult = { blocked: false }
+  let currentError: unknown
 
   try {
-    while (dispatchState.pending.length > 0) {
-      const request = dispatchState.pending.shift()!
+    const queue: Array<DispatchRequest & { current?: boolean }> = [{ context, options, current: true }]
+
+    while (queue.length > 0) {
+      const request = queue.shift()!
 
       try {
-        request.resolve(await executeRequest(request))
+        const result = await executeDispatchRequest(request)
+
+        if (request.current) {
+          currentResult = result
+        }
+
+        request.resolve?.(result)
       } catch (error) {
-        request.reject(error)
+        if (request.current) {
+          currentError = error
+        }
+
+        request.reject?.(error)
+      }
+
+      if (currentState.pending.length > 0) {
+        queue.push(...currentState.pending)
+        currentState.pending = []
       }
     }
   } finally {
-    dispatchState.active = false
+    currentState.active = false
+    currentState.pending = []
+    dispatchStates.delete(dispatchKey)
+  }
+
+  if (currentError !== undefined) {
+    throw currentError
+  }
+
+  return currentResult
+
+  async function executeDispatchRequest(request: DispatchRequest): Promise<HookExecutionResult> {
+    for (const hook of eventHooks) {
+      const result = await executeHook(hook, state, input, runBashHook, sessionID, request.context, request.options, activeActionTargets)
+      if (result.blocked) {
+        return result
+      }
+    }
+
+    return { blocked: false }
   }
 }
 
