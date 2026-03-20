@@ -530,17 +530,16 @@ async function executeAction(
   sourceFilePath: string,
   actionRecursionGuards: AsyncLocalStorage<Set<string>>,
 ): Promise<HookExecutionResult> {
-  const targetSessionID = await resolveActionSessionID(state, input, sessionID, runIn)
-  const actionContext: RuntimeActionContext = { ...context, sourceSessionID: sessionID, targetSessionID }
   const executionDirectory = input.directory
 
   if ("command" in action) {
-    if (!targetSessionID) {
-      return { blocked: false }
-    }
-
-    const actionKey = `${event}:${targetSessionID}:command:${sourceFilePath}:${JSON.stringify(action.command)}`
     try {
+      const targetSessionID = await resolveActionSessionID(state, input, sessionID, runIn)
+      if (!targetSessionID) {
+        return { blocked: false }
+      }
+
+      const actionKey = `${event}:${targetSessionID}:command:${sourceFilePath}:${JSON.stringify(action.command)}`
       const config = typeof action.command === "string" ? { name: action.command, args: "" } : action.command
       await withActionRecursionGuard(actionRecursionGuards, actionKey, () =>
         input.client.session.command({
@@ -560,12 +559,13 @@ async function executeAction(
   }
 
   if ("tool" in action) {
-    if (!targetSessionID) {
-      return { blocked: false }
-    }
-
-    const actionKey = `${event}:${targetSessionID}:tool:${sourceFilePath}:${JSON.stringify(action.tool)}`
     try {
+      const targetSessionID = await resolveActionSessionID(state, input, sessionID, runIn)
+      if (!targetSessionID) {
+        return { blocked: false }
+      }
+
+      const actionKey = `${event}:${targetSessionID}:tool:${sourceFilePath}:${JSON.stringify(action.tool)}`
       await withActionRecursionGuard(actionRecursionGuards, actionKey, () =>
         input.client.session.prompt({
           path: { id: targetSessionID },
@@ -596,10 +596,10 @@ async function executeAction(
       session_id: sessionID,
       event,
       cwd: executionDirectory,
-      files: actionContext.files,
-      changes: actionContext.changes,
-      tool_name: actionContext.toolName,
-      tool_args: actionContext.toolArgs,
+      files: context.files,
+      changes: context.changes,
+      tool_name: context.toolName,
+      tool_args: context.toolArgs,
     },
   })
 
