@@ -258,7 +258,7 @@ Use this as the default decision tree:
 - only `hooks.yaml` is discovered; older `hooks.md` files are not read
 - `hasCodeChange` is extension-based
 - file tracking only covers supported mutation tools
-- bash execution uses `/bin/sh` and therefore requires a working shell environment
+- bash execution uses `bash`, so hooks can rely on bash semantics and still require a working shell environment
 - command and tool actions are non-blocking even when they fail
 - there are no per-hook retries, concurrency controls, or scheduling features
 
