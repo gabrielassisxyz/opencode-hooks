@@ -265,6 +265,84 @@ describe("createHooksRuntime", () => {
     ])
   })
 
+  it("normalizes apply_patch diff payloads for file.changed and session.idle", async () => {
+    const { input } = createMockPluginInput()
+    const observedEvents: Array<{ event: string; files?: readonly string[]; changes?: readonly unknown[] }> = []
+    const executeBash = vi.fn(async ({ context }) => {
+      observedEvents.push({ event: context.event, files: context.files, changes: context.changes })
+
+      return {
+        command: "hook",
+        stdout: "",
+        stderr: "",
+        durationMs: 1,
+        exitCode: 0,
+        signal: null,
+        timedOut: false,
+        status: "success" as const,
+        blocking: false,
+      }
+    })
+
+    const hooks: HookMap = new Map([
+      [["file.changed" as const][0], [createHook("file.changed", { actions: [{ bash: "hook" }], source: { filePath: "a", index: 0 } })]],
+      [
+        "session.idle",
+        [
+          createHook("session.idle", {
+            conditions: ["hasCodeChange"],
+            actions: [{ bash: "hook" }],
+            source: { filePath: "a", index: 1 },
+          }),
+        ],
+      ],
+    ])
+
+    const runtime = createHooksRuntime(input as never, { hooks, executeBash })
+
+    await runtime["tool.execute.before"]?.(
+      { tool: "apply_patch", sessionID: "session-1", callID: "call-diff" },
+      {
+        args: {
+          diff: [
+            "*** Begin Patch",
+            "*** Add File: src/generated.ts",
+            "+export const generated = true",
+            "*** Update File: src/existing.ts",
+            "@@",
+            "-old",
+            "+new",
+            "*** End Patch",
+          ].join("\n"),
+        },
+      },
+    )
+    await runtime["tool.execute.after"]?.(
+      { tool: "apply_patch", sessionID: "session-1", callID: "call-diff", args: {} },
+      { title: "", output: "", metadata: {} },
+    )
+    await runtime.event?.({ event: { type: "session.idle", properties: { sessionID: "session-1" } } } as never)
+
+    expect(observedEvents).toEqual([
+      {
+        event: "file.changed",
+        files: ["src/generated.ts", "src/existing.ts"],
+        changes: [
+          { operation: "create", path: "src/generated.ts" },
+          { operation: "modify", path: "src/existing.ts" },
+        ],
+      },
+      {
+        event: "session.idle",
+        files: ["src/generated.ts", "src/existing.ts"],
+        changes: [
+          { operation: "create", path: "src/generated.ts" },
+          { operation: "modify", path: "src/existing.ts" },
+        ],
+      },
+    ])
+  })
+
   it("tracks write, edit, multiedit, and apply_patch paths for session.idle and clears them after dispatch", async () => {
     const { input } = createMockPluginInput()
     const idleContexts: Array<readonly string[] | undefined> = []
@@ -689,6 +767,92 @@ describe("createHooksRuntime", () => {
       },
       query: { directory: "/repo/project" },
     })
+  })
+
+  it("keeps current-session routing for command and tool actions when runIn is omitted", async () => {
+    const { input, command, prompt } = createMockPluginInput()
+    const hooks: HookMap = new Map([
+      [
+        "tool.after.write",
+        [
+          createHook("tool.after.write", {
+            actions: [{ command: { name: "review-pr", args: "--child" } }, { tool: { name: "bash", args: { command: "pwd" } } }],
+            source: { filePath: "a", index: 0 },
+          }),
+        ],
+      ],
+    ])
+
+    const runtime = createHooksRuntime(input as never, { hooks })
+
+    await runtime.event?.({ event: { type: "session.created", properties: { info: { id: "main-session" } } } } as never)
+    await runtime.event?.({ event: { type: "session.created", properties: { info: { id: "child-session", parentID: "main-session" } } } } as never)
+    await runtime["tool.execute.before"]?.(
+      { tool: "write", sessionID: "child-session", callID: "call-current" },
+      { args: { filePath: "src/file.ts", value: "content" } },
+    )
+    await runtime["tool.execute.after"]?.(
+      { tool: "write", sessionID: "child-session", callID: "call-current", args: {} },
+      { title: "", output: "", metadata: {} },
+    )
+
+    expect(command).toHaveBeenCalledWith({
+      path: { id: "child-session" },
+      body: { command: "review-pr", arguments: "--child" },
+      query: { directory: "/repo/project" },
+    })
+    expect(prompt).toHaveBeenCalledWith({
+      path: { id: "child-session" },
+      body: {
+        parts: [
+          {
+            type: "text",
+            text: "Use the bash tool with these arguments: {\"command\":\"pwd\"}",
+          },
+        ],
+      },
+      query: { directory: "/repo/project" },
+    })
+  })
+
+  it("cleans pending tool calls when a session is deleted before tool.execute.after", async () => {
+    const { input } = createMockPluginInput()
+    const observedContexts: Array<{ event: string; toolArgs?: Record<string, unknown>; files?: readonly string[] }> = []
+    const executeBash = vi.fn(async ({ context }) => {
+      observedContexts.push({ event: context.event, toolArgs: context.tool_args, files: context.files })
+      return {
+        command: "hook",
+        stdout: "",
+        stderr: "",
+        durationMs: 1,
+        exitCode: 0,
+        signal: null,
+        timedOut: false,
+        status: "success" as const,
+        blocking: false,
+      }
+    })
+
+    const hooks: HookMap = new Map([
+      [["tool.after.write" as const][0], [createHook("tool.after.write", { actions: [{ bash: "hook" }], source: { filePath: "a", index: 0 } })]],
+      [["file.changed" as const][0], [createHook("file.changed", { actions: [{ bash: "hook" }], source: { filePath: "a", index: 1 } })]],
+    ])
+
+    const runtime = createHooksRuntime(input as never, { hooks, executeBash })
+
+    await runtime["tool.execute.before"]?.(
+      { tool: "write", sessionID: "session-1", callID: "call-cleanup" },
+      { args: { filePath: "src/pending.ts", value: "pending" } },
+    )
+    await runtime.event?.({ event: { type: "session.deleted", properties: { info: { id: "session-1" } } } } as never)
+    await runtime["tool.execute.after"]?.(
+      { tool: "write", sessionID: "session-1", callID: "call-cleanup", args: {} },
+      { title: "", output: "", metadata: {} },
+    )
+
+    expect(observedContexts).toEqual([
+      { event: "tool.after.write", toolArgs: {}, files: undefined },
+    ])
   })
 
   it("skips actions targeting deleted sessions and bounds reentrant main routing", async () => {
