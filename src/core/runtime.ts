@@ -6,8 +6,8 @@ import { executeBashHook } from "./bash-executor.js"
 import type { BashExecutionRequest } from "./bash-types.js"
 import { loadDiscoveredHooks } from "./load-hooks.js"
 import { SessionStateStore } from "./session-state.js"
-import { getToolAffectedPaths } from "./tool-paths.js"
-import type { HookAction, HookConfig, HookEvent, HookMap } from "./types.js"
+import { getChangedPaths, getMutationToolHookNames, getToolFileChanges } from "./tool-paths.js"
+import type { FileChange, HookAction, HookConfig, HookEvent, HookMap } from "./types.js"
 
 const CODE_EXTENSIONS = new Set([
   ".ts",
@@ -118,6 +118,7 @@ interface RuntimeEventEnvelope {
 
 interface RuntimeActionContext {
   readonly files?: readonly string[]
+  readonly changes?: readonly FileChange[]
   readonly toolName?: string
   readonly toolArgs?: Record<string, unknown>
 }
@@ -182,8 +183,19 @@ export function createHooksRuntime(input: PluginInput, options: CreateHooksRunti
 
       const pending = state.consumePendingToolCall(eventInput.callID)
       const toolArgs = resolveToolArgs(eventInput.args, pending?.toolArgs)
+      const changes = getToolFileChanges(eventInput.tool, toolArgs)
+      const files = changes.length > 0 ? getChangedPaths(changes) : undefined
 
-      state.addModifiedPaths(sessionID, getToolAffectedPaths(eventInput.tool, toolArgs))
+      state.addFileChanges(sessionID, changes)
+
+      if (changes.length > 0) {
+        await dispatchHooks(hooks, state, input, runBashHook, "file.changed", sessionID, {
+          files,
+          changes,
+          toolName: eventInput.tool,
+          toolArgs,
+        })
+      }
 
       await dispatchToolHooks(
         hooks,
@@ -194,6 +206,8 @@ export function createHooksRuntime(input: PluginInput, options: CreateHooksRunti
         eventInput.tool,
         sessionID,
         {
+          files,
+          changes,
           toolName: eventInput.tool,
           toolArgs,
         },
@@ -233,8 +247,9 @@ export function createHooksRuntime(input: PluginInput, options: CreateHooksRunti
           return
         }
 
+        const changes = state.getFileChanges(sessionID)
         const files = state.getModifiedPaths(sessionID)
-        await dispatchHooks(hooks, state, input, runBashHook, "session.idle", sessionID, { files })
+        await dispatchHooks(hooks, state, input, runBashHook, "session.idle", sessionID, { files, changes })
         state.clearModifiedPaths(sessionID)
       }
     },
@@ -265,16 +280,24 @@ async function dispatchToolHooks(
     return wildcardResult
   }
 
-  return dispatchHooks(
-    hooks,
-    state,
-    input,
-    runBashHook,
-    `tool.${phase}.${toolName}`,
-    sessionID,
-    context,
-    { canBlock: phase === "before" },
-  )
+  for (const resolvedToolName of getMutationToolHookNames(toolName).length > 0 ? getMutationToolHookNames(toolName) : [toolName]) {
+    const result = await dispatchHooks(
+      hooks,
+      state,
+      input,
+      runBashHook,
+      `tool.${phase}.${resolvedToolName}`,
+      sessionID,
+      context,
+      { canBlock: phase === "before" },
+    )
+
+    if (result.blocked) {
+      return result
+    }
+  }
+
+  return { blocked: false }
 }
 
 async function dispatchHooks(
@@ -332,14 +355,29 @@ async function executeHook(
 
 async function shouldRunHook(
   hook: HookConfig,
-  _state: SessionStateStore,
-  _input: PluginInput,
-  _sessionID: string,
+  state: SessionStateStore,
+  input: PluginInput,
+  sessionID: string,
   context: RuntimeActionContext,
 ): Promise<boolean> {
   for (const condition of hook.conditions ?? []) {
     if (condition === "hasCodeChange") {
       if (!(context.files ?? []).some(hasCodeExtension)) {
+        return false
+      }
+
+      continue
+    }
+
+    if (condition === "isMainSession") {
+      const isMainSession = await state.isMainSession(sessionID, async (currentSessionID) => {
+        const response = await input.client.session.get({ path: { id: currentSessionID } })
+        const data = asRecord(response.data)
+        const info = asRecord(data?.info)
+        return pickString(info?.parentID, data?.parentID) ?? null
+      })
+
+      if (!isMainSession) {
         return false
       }
     }
@@ -406,6 +444,7 @@ async function executeAction(
       event,
       cwd: input.directory,
       files: context.files,
+      changes: context.changes,
       tool_name: context.toolName,
       tool_args: context.toolArgs,
     },
