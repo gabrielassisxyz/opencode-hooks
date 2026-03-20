@@ -177,6 +177,8 @@ actions:
       timeout: 30000
 ```
 
+If `timeout` is omitted, bash actions use the runtime default of `60000` milliseconds.
+
 ## Bash contract
 
 For bash actions, the runtime passes both environment variables and JSON over stdin.
@@ -231,6 +233,14 @@ Only `tool.before.*` and `tool.before.<name>` hooks can block tool execution.
 - the runtime stops remaining actions for that hook chain
 - the tool call throws with the bash stderr text, or `Blocked by hook` if stderr is empty
 - `tool.after.*`, `tool.after.<name>`, and session hooks do not block execution
+
+## Execution behavior
+
+- hooks for the same event run in declaration order
+- global hooks are appended before project hooks for the same event
+- action failures are logged and later actions continue unless a blocking `tool.before` bash action exits with `2`
+- `session.idle` only sees files tracked from OpenCode mutation tools in the current session
+- after `session.idle` dispatch completes, that session's tracked modified-file list is cleared
 
 Example: block writes to secret files.
 
