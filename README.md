@@ -31,9 +31,8 @@ The plugin entrypoint is `src/index.ts`, which exports the OpenCode `Plugin` imp
 Read these in order:
 
 1. [`docs/hooks-v2-reference.md`](docs/hooks-v2-reference.md) for the current public config shape
-2. [`docs/migration-to-hooks-yaml.md`](docs/migration-to-hooks-yaml.md) if you are moving from `hooks.md` or `isMainSession`
-3. [`docs/implementation-status.md`](docs/implementation-status.md) for branch-accurate implementation notes, status, and known limitations
-4. [`examples/hooks.yaml`](examples/hooks.yaml) for copy-pasteable patterns
+2. This branch loads `hooks.yaml`, not `hooks.md`, so use the reference above for migration-related behavior too
+3. [`examples/hooks.yaml`](examples/hooks.yaml) for copy-pasteable patterns
 
 ## Current config locations
 

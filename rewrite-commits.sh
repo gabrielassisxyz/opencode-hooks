@@ -120,7 +120,7 @@ done
 # Use git filter-branch to rewrite only the bad commits
 BASE_COMMIT=$(git merge-base main HEAD)
 FILTER_BRANCH_SQUELCH_WARNING=1 git filter-branch --force --msg-filter "
-  COMMIT_HASH=\$(git log -1 --format='%H' 2>/dev/null || echo '')
+  COMMIT_HASH=\${GIT_COMMIT:-}
   if [ -f \"$MSGDIR/\$COMMIT_HASH\" ]; then
     cat \"$MSGDIR/\$COMMIT_HASH\"
   else
