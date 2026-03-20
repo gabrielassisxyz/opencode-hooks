@@ -2,8 +2,9 @@ import type { FileChange } from "./types.js"
 
 const DIRECT_MUTATION_TOOL_NAMES = ["write", "edit", "multiedit"] as const
 const PATCH_MUTATION_TOOL_NAMES = ["patch", "apply_patch"] as const
+const BASH_TOOL_NAME = "bash" as const
 
-export const MUTATION_TOOL_NAMES = new Set([...DIRECT_MUTATION_TOOL_NAMES, ...PATCH_MUTATION_TOOL_NAMES])
+export const MUTATION_TOOL_NAMES = new Set([...DIRECT_MUTATION_TOOL_NAMES, ...PATCH_MUTATION_TOOL_NAMES, BASH_TOOL_NAME])
 
 export type MutationToolName = (typeof DIRECT_MUTATION_TOOL_NAMES)[number] | (typeof PATCH_MUTATION_TOOL_NAMES)[number]
 export type NormalizedMutationToolName = "write" | "edit" | "multiedit" | "apply_patch"

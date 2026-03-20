@@ -16,12 +16,14 @@
 
 hooks:
   # Scope controls which session emits the event.
-  - event: session.created
+  - id: main-session-started
+    event: session.created
     scope: main
     actions:
       - bash: 'echo "main session started: $OPENCODE_SESSION_ID"'
 
-  - event: session.deleted
+  - id: main-session-ended
+    event: session.deleted
     scope: main
     actions:
       - bash: 'echo "main session ended: $OPENCODE_SESSION_ID"'
@@ -29,7 +31,8 @@ hooks:
   # runIn controls where follow-up commands run.
   # This keeps review-pr attached to the root session even if a child session
   # triggered the hook.
-  - event: file.changed
+  - id: lint-and-review-on-change
+    event: file.changed
     scope: all
     runIn: main
     conditions: [hasCodeChange]
@@ -41,7 +44,8 @@ hooks:
           name: review-pr
           args: "main feature"
 
-  - event: session.idle
+  - id: test-when-idle
+    event: session.idle
     scope: main
     conditions: [hasCodeChange]
     actions:
@@ -49,18 +53,21 @@ hooks:
 
   # Minimal example showing that scope and runIn can be omitted.
   # This uses the defaults scope=all and runIn=current.
-  - event: file.changed
+  - id: typecheck-on-change
+    event: file.changed
     conditions: [hasCodeChange]
     actions:
       - bash: "npm run typecheck"
 
-  - event: tool.before.*
+  - id: log-before-tools
+    event: tool.before.*
     actions:
       - bash: |
           context=$(cat)
           echo "before tool: $(echo "$context" | jq -r '.tool_name')"
 
-  - event: tool.before.write
+  - id: block-sensitive-writes
+    event: tool.before.write
     actions:
       - bash: |
           file=$(cat | jq -r '.tool_args.filePath // .tool_args.file_path // .tool_args.path')
@@ -72,7 +79,8 @@ hooks:
   # Advanced: tool.after hooks run for every matching tool execution.
   # Prefer file.changed for file automation so hooks only see explicit mutation
   # payloads from supported file-changing tools.
-  - event: tool.after.*
+  - id: audit-tool-usage
+    event: tool.after.*
     actions:
       - bash: |
           context=$(cat)
@@ -80,8 +88,30 @@ hooks:
 
   # Recommended atomic commit wiring: trigger on file.changed instead of
   # tool.after.* so the script only stages paths reported by the runtime.
-  - event: file.changed
+  - id: atomic-commit-on-change
+    event: file.changed
     scope: main
     conditions: [hasCodeChange]
     actions:
       - bash: "$HOME/.config/opencode/hook/atomic-commit.sh"
+
+  # Overrides live in the same top-level hooks list and target an earlier file's id.
+  # Put override entries in the project hooks file when you want to customize a
+  # global hook without editing the global configuration.
+
+  # Replacement override example.
+  - override: lint-and-review-on-change
+    event: file.changed
+    scope: main
+    conditions: [hasCodeChange]
+    actions:
+      - bash:
+          command: "pnpm lint --fix"
+          timeout: 30000
+      - command:
+          name: review-pr
+          args: "main docs"
+
+  # Disable override example.
+  - override: atomic-commit-on-change
+    disable: true

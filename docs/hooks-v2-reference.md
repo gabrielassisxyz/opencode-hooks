@@ -16,7 +16,8 @@ Global hooks load first. Project hooks load second. Matching hooks are combined.
 
 ```yaml
 hooks:
-  - event: <hook-event>
+  - id: <optional-hook-id>
+    event: <hook-event>
     scope: <all|main|child>
     runIn: <current|main>
     conditions:
@@ -29,15 +30,29 @@ Rules:
 
 - `hooks` is required
 - `hooks` must be an array
-- each hook must be an object
-- `actions` is required and must be non-empty
+- each hook entry must be an object
+- `id` is optional, but required when another file needs to override or disable the hook
+- `actions` is required and must be non-empty for normal hooks
 - each action must define exactly one of `command`, `tool`, or `bash`
+- override entries also live inside `hooks`, target an existing hook `id`, and either replace that hook or disable it
 
 ## Hook fields
 
+### `id`
+
+Optional for normal hook definitions. Must be a non-empty string when present.
+
+Use `id` when you want a later config file to override or disable a hook from an earlier file.
+
+Rules:
+
+- ids must be unique within the same `hooks.yaml` file
+- override targets are matched by `id`
+- hooks without an `id` cannot be targeted by overrides
+
 ### `event`
 
-Required.
+Required for normal hooks and replacement overrides.
 
 Supported values:
 
@@ -86,9 +101,29 @@ All configured conditions must pass.
 
 ### `actions`
 
-Required. Non-empty array.
+Required for normal hooks and replacement overrides. Non-empty array.
 
 Supported action shapes are documented below.
+
+### `override`
+
+Optional. Use this only on override entries inside `hooks`.
+
+`override` must be a non-empty string containing the target hook id.
+
+Two override modes are supported:
+
+- replacement override: set `override: <target-id>` and provide a full replacement hook definition
+- disable override: set `override: <target-id>` and `disable: true`
+
+Replacement overrides must still define a valid hook, including `event` and a non-empty `actions` array.
+
+### `disable`
+
+Optional. Only meaningful together with `override`.
+
+- `disable: true` removes the targeted earlier hook
+- omitted or `false` means the override entry is treated as a replacement hook
 
 ## Actions
 
@@ -178,7 +213,8 @@ Example:
 
 ```yaml
 hooks:
-  - event: session.created
+  - id: main-session-started
+    event: session.created
     scope: main
     actions:
       - bash: 'echo "main session started: $OPENCODE_SESSION_ID"'
@@ -233,7 +269,8 @@ Example:
 
 ```yaml
 hooks:
-  - event: file.changed
+  - id: lint-on-change
+    event: file.changed
     conditions: [hasCodeChange]
     actions:
       - bash:
@@ -259,7 +296,8 @@ Example:
 
 ```yaml
 hooks:
-  - event: tool.before.write
+  - id: block-sensitive-writes
+    event: tool.before.write
     actions:
       - bash: |
           file=$(cat | jq -r '.tool_args.filePath // .tool_args.file_path // .tool_args.path')
@@ -296,6 +334,61 @@ For a tool named `write`, the runtime order is:
 4. `file.changed` if tracked changes were detected
 5. `tool.after.*`
 6. `tool.after.write`
+
+## Override resolution rules
+
+Overrides are resolved while files are loaded in discovery order.
+
+Current load order:
+
+1. global hooks file
+2. project hooks file
+
+Resolution behavior implemented on this branch:
+
+- hooks from earlier files are loaded first
+- override entries in the current file can only target hooks that were already loaded from earlier files
+- the runtime resolves overrides before it appends normal hooks from the current file
+- a replacement override swaps the earlier hook in place
+- a disable override removes the earlier hook entirely
+- targeting an unknown id produces an `override_target_not_found` validation error
+- same-file overrides do not work because hooks declared later in the same file have not been loaded yet
+- project hooks can override global hooks, but global hooks cannot override project hooks
+
+Replacement example:
+
+Global file:
+
+```yaml
+hooks:
+  - id: format-on-change
+    event: file.changed
+    conditions: [hasCodeChange]
+    actions:
+      - bash: "npm run lint -- --fix"
+```
+
+Project file:
+
+```yaml
+hooks:
+  - override: format-on-change
+    event: file.changed
+    scope: main
+    conditions: [hasCodeChange]
+    actions:
+      - bash:
+          command: "pnpm lint --fix"
+          timeout: 30000
+```
+
+Disable example:
+
+```yaml
+hooks:
+  - override: format-on-change
+    disable: true
+```
 
 ## Payload reference
 
@@ -384,7 +477,8 @@ Only `tool.before.*` and `tool.before.<name>` bash hooks can block.
 
 ```yaml
 hooks:
-  - event: file.changed
+  - id: atomic-commit-on-change
+    event: file.changed
     scope: main
     conditions: [hasCodeChange]
     actions:
@@ -395,7 +489,8 @@ hooks:
 
 ```yaml
 hooks:
-  - event: file.changed
+  - id: review-pr-on-change
+    event: file.changed
     scope: all
     runIn: main
     actions:
@@ -408,7 +503,8 @@ hooks:
 
 ```yaml
 hooks:
-  - event: tool.after.*
+  - id: audit-tool-usage
+    event: tool.after.*
     actions:
       - bash: |
           context=$(cat)
