@@ -382,6 +382,8 @@ async function dispatchHooks(
     return { blocked: false }
   }
 
+  const hooksForEvent = eventHooks
+
   const dispatchKey = `${event}:${sessionID}`
   const dispatchState = dispatchStates.get(dispatchKey)
   if (dispatchState?.active) {
@@ -442,7 +444,7 @@ async function dispatchHooks(
   return currentResult
 
   async function executeDispatchRequest(request: DispatchRequest): Promise<HookExecutionResult> {
-    for (const hook of eventHooks) {
+    for (const hook of hooksForEvent) {
       const result = await executeHook(hook, state, input, runBashHook, sessionID, request.context, request.options, activeActionTargets)
       if (result.blocked) {
         return result
