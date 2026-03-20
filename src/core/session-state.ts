@@ -1,3 +1,5 @@
+import type { FileChange } from "./types.js"
+
 export interface PendingToolCall {
   readonly sessionID: string
   readonly toolArgs: Record<string, unknown>
@@ -5,7 +7,8 @@ export interface PendingToolCall {
 
 interface SessionRecord {
   isMainSession?: boolean
-  modifiedPaths: Set<string>
+  changes: FileChange[]
+  changeKeys: Set<string>
 }
 
 export class SessionStateStore {
@@ -54,22 +57,28 @@ export class SessionStateStore {
     return pending
   }
 
-  addModifiedPaths(sessionID: string, filePaths: Iterable<string>): void {
+  addFileChanges(sessionID: string, changes: Iterable<FileChange>): void {
     const record = this.getOrCreateSession(sessionID)
-    for (const filePath of filePaths) {
-      if (filePath) {
-        record.modifiedPaths.add(filePath)
+    for (const change of changes) {
+      const key = serializeFileChange(change)
+      if (!record.changeKeys.has(key)) {
+        record.changeKeys.add(key)
+        record.changes.push(change)
       }
     }
   }
 
-  getModifiedPaths(sessionID: string): string[] {
+  getFileChanges(sessionID: string): FileChange[] {
     const record = this.sessions.get(sessionID)
-    if (!record || record.modifiedPaths.size === 0) {
+    if (!record || record.changes.length === 0) {
       return []
     }
 
-    return Array.from(record.modifiedPaths)
+    return [...record.changes]
+  }
+
+  getModifiedPaths(sessionID: string): string[] {
+    return getChangedPaths(this.getFileChanges(sessionID))
   }
 
   clearModifiedPaths(sessionID: string): void {
@@ -78,15 +87,46 @@ export class SessionStateStore {
       return
     }
 
-    record.modifiedPaths.clear()
+    record.changes = []
+    record.changeKeys.clear()
   }
 
   private getOrCreateSession(sessionID: string): SessionRecord {
     let record = this.sessions.get(sessionID)
     if (!record) {
-      record = { modifiedPaths: new Set() }
+      record = { changes: [], changeKeys: new Set() }
       this.sessions.set(sessionID, record)
     }
     return record
   }
+}
+
+function getChangedPaths(changes: readonly FileChange[]): string[] {
+  const paths = new Set<string>()
+
+  for (const change of changes) {
+    if (change.operation === "rename") {
+      if (change.fromPath) {
+        paths.add(change.fromPath)
+      }
+      if (change.toPath) {
+        paths.add(change.toPath)
+      }
+      continue
+    }
+
+    if (change.path) {
+      paths.add(change.path)
+    }
+  }
+
+  return Array.from(paths)
+}
+
+function serializeFileChange(change: FileChange): string {
+  if (change.operation === "rename") {
+    return `${change.operation}:${change.fromPath}->${change.toPath}`
+  }
+
+  return `${change.operation}:${change.path}`
 }
