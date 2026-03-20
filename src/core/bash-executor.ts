@@ -1,4 +1,5 @@
-import { spawn } from "node:child_process"
+import { execFileSync, spawn } from "node:child_process"
+import path from "node:path"
 
 import {
   DEFAULT_BASH_TIMEOUT,
@@ -14,8 +15,10 @@ const KILL_GRACE_PERIOD_MS = 250
 
 export async function executeBashHook(request: BashExecutionRequest): Promise<BashHookResult> {
   const processResult = await executeBashProcess(request)
+  const hookResult = mapBashProcessResultToHookResult(processResult, request.context)
 
-  return mapBashProcessResultToHookResult(processResult, request.context)
+  logBashOutcome(hookResult, request)
+  return hookResult
 }
 
 export function mapBashProcessResultToHookResult(result: BashProcessResult, context: BashHookContext): BashHookResult {
@@ -41,16 +44,19 @@ export function isBlockingToolBeforeEvent(event: string): boolean {
 async function executeBashProcess(request: BashExecutionRequest): Promise<BashProcessResult> {
   const timeout = request.timeout ?? DEFAULT_BASH_TIMEOUT
   const startTime = Date.now()
+  const executionContext = resolveExecutionContext(request.projectDir)
 
   return new Promise((resolve) => {
     const env = {
       ...process.env,
-      OPENCODE_PROJECT_DIR: request.projectDir,
+      OPENCODE_PROJECT_DIR: executionContext.worktreeDir,
+      OPENCODE_WORKTREE_DIR: executionContext.worktreeDir,
       OPENCODE_SESSION_ID: request.context.session_id,
+      ...(executionContext.gitCommonDir ? { OPENCODE_GIT_COMMON_DIR: executionContext.gitCommonDir } : {}),
     }
 
     const child = spawn("bash", ["-c", request.command], {
-      cwd: request.context.cwd,
+      cwd: executionContext.worktreeDir,
       env,
       stdio: ["pipe", "pipe", "pipe"],
     })
@@ -134,4 +140,57 @@ function appendStderr(stderr: string, message?: string): string {
   }
 
   return `${stderr}${stderr.endsWith("\n") ? "" : "\n"}${message}`
+}
+
+function logBashOutcome(result: BashHookResult, request: BashExecutionRequest): void {
+  if (result.status !== "failed" && result.status !== "timed_out") {
+    return
+  }
+
+  const details = [
+    `[opencode-hooks] Bash hook ${result.status}`,
+    `event=${request.context.event}`,
+    `session=${request.context.session_id}`,
+    `cwd=${request.context.cwd}`,
+    `projectDir=${request.projectDir}`,
+    `exitCode=${result.exitCode}`,
+    `signal=${result.signal ?? "none"}`,
+    `durationMs=${result.durationMs}`,
+    `command=${JSON.stringify(result.command)}`,
+  ]
+
+  if (result.stderr.trim()) {
+    details.push(`stderr=${JSON.stringify(result.stderr.trim())}`)
+  }
+
+  if (result.stdout.trim()) {
+    details.push(`stdout=${JSON.stringify(result.stdout.trim())}`)
+  }
+
+  console.error(details.join(" | "))
+}
+
+function resolveExecutionContext(projectDir: string): { worktreeDir: string; gitCommonDir?: string } {
+  try {
+    const output = execFileSync("git", ["rev-parse", "--show-toplevel", "--git-common-dir"], {
+      cwd: projectDir,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim()
+
+    const [worktreeDirLine, gitCommonDirLine] = output.split(/\r?\n/)
+    const worktreeDir = worktreeDirLine?.trim() || projectDir
+    const gitCommonDir = gitCommonDirLine?.trim()
+
+    return {
+      worktreeDir,
+      ...(gitCommonDir
+        ? {
+            gitCommonDir: path.isAbsolute(gitCommonDir) ? gitCommonDir : path.resolve(worktreeDir, gitCommonDir),
+          }
+        : {}),
+    }
+  } catch {
+    return { worktreeDir: projectDir }
+  }
 }
