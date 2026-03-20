@@ -778,6 +778,112 @@ describe("createHooksRuntime", () => {
     errorSpy.mockRestore()
   })
 
+  it("reloads hooks.yaml before new events after a valid edit", async () => {
+    const projectDir = path.join(os.tmpdir(), `opencode-hooks-${Date.now()}-${Math.random().toString(16).slice(2)}`)
+    mkdirSync(path.join(projectDir, ".opencode", "hook"), { recursive: true })
+
+    const writeHooks = (commandName: string) => {
+      writeFileSync(
+        path.join(projectDir, ".opencode", "hook", "hooks.yaml"),
+        `hooks:
+  - event: session.created
+    actions:
+      - bash: ${commandName}
+`,
+        "utf8",
+      )
+    }
+
+    writeHooks("first")
+
+    const { input } = createMockPluginInput()
+    const executeBash = vi.fn(async ({ command }) => ({
+      command,
+      stdout: "",
+      stderr: "",
+      durationMs: 1,
+      exitCode: 0,
+      signal: null,
+      timedOut: false,
+      status: "success" as const,
+      blocking: false,
+    }))
+
+    const runtime = createHooksRuntime({ ...(input as object), directory: projectDir } as never, { executeBash })
+
+    await runtime.event?.({ event: { type: "session.created", properties: { info: { id: "session-1" } } } } as never)
+
+    writeHooks("second")
+
+    await runtime.event?.({ event: { type: "session.created", properties: { info: { id: "session-2" } } } } as never)
+
+    expect(executeBash.mock.calls.map(([request]) => request.command)).toEqual(["first", "second"])
+  })
+
+  it("keeps the last known good hooks when a reload edit is invalid and logs the validation error once", async () => {
+    const projectDir = path.join(os.tmpdir(), `opencode-hooks-${Date.now()}-${Math.random().toString(16).slice(2)}`)
+    mkdirSync(path.join(projectDir, ".opencode", "hook"), { recursive: true })
+    const hooksPath = path.join(projectDir, ".opencode", "hook", "hooks.yaml")
+
+    const { input } = createMockPluginInput()
+    const executeBash = vi.fn(async ({ command }) => ({
+      command,
+      stdout: "",
+      stderr: "",
+      durationMs: 1,
+      exitCode: 0,
+      signal: null,
+      timedOut: false,
+      status: "success" as const,
+      blocking: false,
+    }))
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+
+    writeFileSync(
+      hooksPath,
+      `hooks:
+  - event: session.created
+    actions:
+      - bash: valid
+`,
+      "utf8",
+    )
+
+    const runtime = createHooksRuntime({ ...(input as object), directory: projectDir } as never, { executeBash })
+
+    await runtime.event?.({ event: { type: "session.created", properties: { info: { id: "session-1" } } } } as never)
+
+    writeFileSync(
+      hooksPath,
+      `hooks:
+  - event: session.created
+    actions: invalid
+`,
+      "utf8",
+    )
+
+    await runtime.event?.({ event: { type: "session.created", properties: { info: { id: "session-2" } } } } as never)
+    await runtime.event?.({ event: { type: "session.created", properties: { info: { id: "session-3" } } } } as never)
+
+    writeFileSync(
+      hooksPath,
+      `hooks:
+  - event: session.created
+    actions:
+      - bash: fixed
+`,
+      "utf8",
+    )
+
+    await runtime.event?.({ event: { type: "session.created", properties: { info: { id: "session-4" } } } } as never)
+
+    expect(executeBash.mock.calls.map(([request]) => request.command)).toEqual(["valid", "valid", "valid", "fixed"])
+    expect(errorSpy).toHaveBeenCalledTimes(1)
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("keeping last known good hooks"))
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("actions must be a non-empty array"))
+    errorSpy.mockRestore()
+  })
+
   it("uses the worktree root for runIn main command and tool actions", async () => {
     const { input, command, prompt } = createMockPluginInput()
     const directory = path.join(process.cwd(), "src", "core")
