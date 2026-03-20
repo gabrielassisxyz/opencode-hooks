@@ -322,7 +322,7 @@ async function dispatchToolHooks(
   input: PluginInput,
   runBashHook: ExecuteBashHook,
   dispatchStates: Map<string, DispatchState>,
-  activeActionTargets: Set<string>,
+  actionRecursionGuards: AsyncLocalStorage<Set<string>>,
   phase: "before" | "after",
   toolName: string,
   sessionID: string,
@@ -338,7 +338,7 @@ async function dispatchToolHooks(
     context,
     { canBlock: phase === "before" },
     dispatchStates,
-    activeActionTargets,
+    actionRecursionGuards,
   )
   if (wildcardResult.blocked) {
     return wildcardResult
@@ -355,7 +355,7 @@ async function dispatchToolHooks(
       context,
       { canBlock: phase === "before" },
       dispatchStates,
-      activeActionTargets,
+      actionRecursionGuards,
     )
 
     if (result.blocked) {
@@ -376,7 +376,7 @@ async function dispatchHooks(
   context: RuntimeActionContext = {},
   options: { canBlock?: boolean } = {},
   dispatchStates: Map<string, DispatchState>,
-  activeActionTargets: Set<string>,
+  actionRecursionGuards: AsyncLocalStorage<Set<string>>,
 ): Promise<HookExecutionResult> {
   const eventHooks = hooks.get(event)
   if (!eventHooks || eventHooks.length === 0) {
@@ -446,7 +446,7 @@ async function dispatchHooks(
 
   async function executeDispatchRequest(request: DispatchRequest): Promise<HookExecutionResult> {
     for (const hook of hooksForEvent) {
-      const result = await executeHook(hook, state, input, runBashHook, sessionID, request.context, request.options, activeActionTargets)
+      const result = await executeHook(hook, state, input, runBashHook, sessionID, request.context, request.options, actionRecursionGuards)
       if (result.blocked) {
         return result
       }
@@ -464,7 +464,7 @@ async function executeHook(
   sessionID: string,
   context: RuntimeActionContext,
   options: { canBlock?: boolean },
-  activeActionTargets: Set<string>,
+  actionRecursionGuards: AsyncLocalStorage<Set<string>>,
 ): Promise<HookExecutionResult> {
   try {
     if (!(await shouldRunHook(hook, state, input, sessionID, context))) {
@@ -486,7 +486,7 @@ async function executeHook(
         sessionID,
         context,
         hook.source.filePath,
-        activeActionTargets,
+        actionRecursionGuards,
       )
     if (result.blocked && options.canBlock) {
       return result
@@ -528,7 +528,7 @@ async function executeAction(
   sessionID: string,
   context: RuntimeActionContext,
   sourceFilePath: string,
-  activeActionTargets: Set<string>,
+  actionRecursionGuards: AsyncLocalStorage<Set<string>>,
 ): Promise<HookExecutionResult> {
   const targetSessionID = await resolveActionSessionID(state, input, sessionID, runIn)
   const actionContext: RuntimeActionContext = { ...context, sourceSessionID: sessionID, targetSessionID }
