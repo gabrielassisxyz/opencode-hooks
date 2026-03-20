@@ -67,7 +67,9 @@ hooks:
 - Hooks for the same event run in declaration order.
 - `tool.before.*` runs before `tool.before.<name>`.
 - Only a bash action returning exit code `2` during a `tool.before` hook blocks the tool.
+- Bash actions inherit the current process environment in addition to `OPENCODE_*` variables.
 - `session.idle` receives a `files` array only for paths tracked through `write`, `edit`, `multiedit`, and `apply_patch`.
+- `session.idle` clears tracked files only after hook dispatch succeeds, so failed idle dispatches can be retried.
 - `hasCodeChange` only passes when at least one tracked path has a supported code extension.
 
 ## Bash stdin reference
