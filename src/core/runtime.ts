@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process"
 import { extname } from "node:path"
 
 import type { Hooks, PluginInput } from "@opencode-ai/plugin"
@@ -140,7 +141,7 @@ export interface CreateHooksRuntimeOptions {
 export function createHooksRuntime(input: PluginInput, options: CreateHooksRuntimeOptions = {}): Hooks {
   const loaded = options.hooks ? { hooks: options.hooks, errors: [] } : loadDiscoveredHooks({ projectDir: input.directory })
   if (loaded.errors.length > 0) {
-    throw new Error(formatHookLoadErrors(loaded.errors))
+    console.error(formatHookLoadErrors(loaded.errors))
   }
 
   const hooks = loaded.hooks
@@ -148,6 +149,7 @@ export function createHooksRuntime(input: PluginInput, options: CreateHooksRunti
   const runBashHook = options.executeBash ?? executeBashHook
   const activeDispatches = new Set<string>()
   const activeActionTargets = new Set<string>()
+  const worktreeDirectoryPromise = Promise.resolve(resolveWorktreeDirectory(input.directory))
 
   return {
     "tool.execute.before": async (eventInput: ToolExecuteBeforeInput, eventOutput: ToolExecuteBeforeOutput): Promise<void> => {
@@ -259,7 +261,7 @@ export function createHooksRuntime(input: PluginInput, options: CreateHooksRunti
         const changes = state.getFileChanges(sessionID)
         const files = state.getModifiedPaths(sessionID)
         await dispatchHooks(hooks, state, input, runBashHook, "session.idle", sessionID, { files, changes }, {}, activeDispatches, activeActionTargets)
-        state.clearModifiedPaths(sessionID)
+        state.consumeFileChanges(sessionID, changes)
       }
     },
   }
@@ -373,7 +375,19 @@ async function executeHook(
   }
 
   for (const action of hook.actions) {
-    const result = await executeAction(action, hook.runIn, input, state, runBashHook, hook.event, sessionID, context, hook.source.filePath, activeActionTargets)
+      const result = await executeAction(
+        action,
+        hook.runIn,
+        input,
+        state,
+        runBashHook,
+        hook.event,
+        sessionID,
+        context,
+        hook.source.filePath,
+        activeActionTargets,
+        worktreeDirectoryPromise,
+      )
     if (result.blocked && options.canBlock) {
       return result
     }
@@ -415,9 +429,11 @@ async function executeAction(
   context: RuntimeActionContext,
   sourceFilePath: string,
   activeActionTargets: Set<string>,
+  worktreeDirectoryPromise: Promise<string>,
 ): Promise<HookExecutionResult> {
   const targetSessionID = await resolveActionSessionID(state, input, sessionID, runIn)
   const actionContext: RuntimeActionContext = { ...context, sourceSessionID: sessionID, targetSessionID }
+  const executionDirectory = await worktreeDirectoryPromise
 
   if ("command" in action) {
     if (!targetSessionID) {
@@ -439,7 +455,7 @@ async function executeAction(
           command: config.name,
           arguments: config.args ?? "",
         },
-        query: { directory: input.directory },
+        query: { directory: executionDirectory },
       })
     } catch (error) {
       logHookFailure(event, sourceFilePath, error)
@@ -473,7 +489,7 @@ async function executeAction(
             },
           ],
         },
-        query: { directory: input.directory },
+        query: { directory: executionDirectory },
       })
     } catch (error) {
       logHookFailure(event, sourceFilePath, error)
@@ -488,11 +504,11 @@ async function executeAction(
   const result = await runBashHook({
     command: config.command,
     timeout: config.timeout,
-    projectDir: input.directory,
+    projectDir: executionDirectory,
     context: {
       session_id: sessionID,
       event,
-      cwd: input.directory,
+      cwd: executionDirectory,
       files: actionContext.files,
       changes: actionContext.changes,
       tool_name: actionContext.toolName,
@@ -533,7 +549,19 @@ function hasCodeExtension(filePath: string): boolean {
 
 function formatHookLoadErrors(errors: Array<{ filePath: string; message: string; path?: string }>): string {
   const details = errors.map((error) => `${error.filePath}${error.path ? `#${error.path}` : ""}: ${error.message}`)
-  return `Failed to load hooks:\n${details.join("\n")}`
+  return `[opencode-hooks] Failed to load some hooks; continuing with valid hooks:\n${details.join("\n")}`
+}
+
+function resolveWorktreeDirectory(directory: string): string {
+  try {
+    return execFileSync("git", ["rev-parse", "--show-toplevel"], {
+      cwd: directory,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim() || directory
+  } catch {
+    return directory
+  }
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
