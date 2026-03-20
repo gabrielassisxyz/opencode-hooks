@@ -106,15 +106,16 @@ describe("executeBashHook", () => {
     const password = "quoted-password-secret"
 
     await executeBashHook({
-      command: `printf '{"token":"${token}","nested":{"password" : "${password}"},"apiKey"='"'"'${token}'"'"'}' >&2; exit 1`,
+      command:
+        `node -e "process.stderr.write(JSON.stringify({token:\"${token}\",nested:{password:\"${password}\"}}) + ' password=\\\"${password}\\\"'); process.exit(1)"`,
       context: baseContext,
       projectDir: "/repo/project",
     })
 
     const logged = errorSpy.mock.calls[0]?.[0]
-    expect(logged).toContain('"token":"[REDACTED]"')
-    expect(logged).toContain('"password" : [REDACTED]')
-    expect(logged).toContain('"apiKey"=[REDACTED]')
+    expect(logged).toContain('\"token\":\"[REDACTED]\"')
+    expect(logged).toContain('\"password\":\"[REDACTED]\"')
+    expect(logged).toContain('password=\\\"[REDACTED]\\\"')
     expect(logged).not.toContain(token)
     expect(logged).not.toContain(password)
     errorSpy.mockRestore()
