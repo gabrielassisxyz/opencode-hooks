@@ -111,15 +111,15 @@ describe("hook config discovery", () => {
       exists: () => false,
     })
 
-    expect(resolved.global).toBe(path.join("C:/Users/tester/AppData/Roaming", "opencode", "hook", "hooks.md"))
+    expect(resolved.global).toBe(path.join("C:/Users/tester/AppData/Roaming", "opencode", "hook", "hooks.yaml"))
   })
 
   it("discovers existing files in deterministic global-then-project order", () => {
     const homeDir = path.join(os.tmpdir(), "home")
     const projectDir = "/repo/project"
     const existing = new Set([
-      path.join(homeDir, ".config", "opencode", "hook", "hooks.md"),
-      path.join(projectDir, ".opencode", "hook", "hooks.md"),
+      path.join(homeDir, ".config", "opencode", "hook", "hooks.yaml"),
+      path.join(projectDir, ".opencode", "hook", "hooks.yaml"),
     ])
 
     const paths = discoverHookConfigPaths({
@@ -130,30 +130,26 @@ describe("hook config discovery", () => {
     })
 
     expect(paths).toEqual([
-      path.join(homeDir, ".config", "opencode", "hook", "hooks.md"),
-      path.join(projectDir, ".opencode", "hook", "hooks.md"),
+      path.join(homeDir, ".config", "opencode", "hook", "hooks.yaml"),
+      path.join(projectDir, ".opencode", "hook", "hooks.yaml"),
     ])
   })
 
   it("merges global hooks before project hooks", () => {
     const homeDir = "/home/tester"
     const projectDir = "/repo/project"
-    const globalPath = path.join(homeDir, ".config", "opencode", "hook", "hooks.md")
-    const projectPath = path.join(projectDir, ".opencode", "hook", "hooks.md")
+    const globalPath = path.join(homeDir, ".config", "opencode", "hook", "hooks.yaml")
+    const projectPath = path.join(projectDir, ".opencode", "hook", "hooks.yaml")
     const files = new Map([
-      [globalPath, `---
-hooks:
+      [globalPath, `hooks:
   - event: session.idle
     actions:
       - command: global
----
 `],
-      [projectPath, `---
-hooks:
+      [projectPath, `hooks:
   - event: session.idle
     actions:
       - command: project
----
 `],
     ])
 
@@ -176,28 +172,24 @@ hooks:
   it("preserves per-file declaration order while merging discovered hook files", () => {
     const homeDir = "/home/tester"
     const projectDir = "/repo/project"
-    const globalPath = path.join(homeDir, ".config", "opencode", "hook", "hooks.md")
-    const projectPath = path.join(projectDir, ".opencode", "hook", "hooks.md")
+    const globalPath = path.join(homeDir, ".config", "opencode", "hook", "hooks.yaml")
+    const projectPath = path.join(projectDir, ".opencode", "hook", "hooks.yaml")
     const files = new Map([
-      [globalPath, `---
-hooks:
+      [globalPath, `hooks:
   - event: tool.before.write
     actions:
       - command: global-first
   - event: tool.before.write
     actions:
       - command: global-second
----
 `],
-      [projectPath, `---
-hooks:
+      [projectPath, `hooks:
   - event: tool.before.write
     actions:
       - command: project-first
   - event: tool.before.write
     actions:
       - command: project-second
----
 `],
     ])
 
@@ -220,27 +212,23 @@ hooks:
   it("keeps valid hooks while reporting invalid hooks from discovered files", () => {
     const homeDir = "/home/tester"
     const projectDir = "/repo/project"
-    const globalPath = path.join(homeDir, ".config", "opencode", "hook", "hooks.md")
-    const projectPath = path.join(projectDir, ".opencode", "hook", "hooks.md")
+    const globalPath = path.join(homeDir, ".config", "opencode", "hook", "hooks.yaml")
+    const projectPath = path.join(projectDir, ".opencode", "hook", "hooks.yaml")
     const files = new Map([
-      [globalPath, `---
-hooks:
+      [globalPath, `hooks:
   - event: tool.before.write
     actions:
       - command: global-valid
   - event: invalid.event
     actions:
       - command: global-invalid
----
 `],
-      [projectPath, `---
-hooks:
+      [projectPath, `hooks:
   - event: tool.before.write
     actions:
       - command: project-valid
   - event: session.idle
     actions: invalid
----
 `],
     ])
 
