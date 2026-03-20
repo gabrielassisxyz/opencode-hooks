@@ -59,6 +59,28 @@ OPENCODE_CHILD_GUARD_VAR="OPENCODE_ATOMIC_COMMIT_CHILD"
 
 LOCKFILE="/tmp/atomic-commit-opencode.lock"
 
+# macOS-compatible timeout: use GNU timeout if available, else a bash background+kill approach
+run_with_timeout() {
+  local secs="$1"
+  shift
+  if command -v timeout >/dev/null 2>&1; then
+    timeout "$secs" "$@"
+  elif command -v gtimeout >/dev/null 2>&1; then
+    gtimeout "$secs" "$@"
+  else
+    # POSIX fallback: run in background, kill after $secs seconds
+    "$@" &
+    local pid=$!
+    ( sleep "$secs" && kill "$pid" 2>/dev/null ) &
+    local watchdog=$!
+    wait "$pid" 2>/dev/null
+    local ret=$?
+    kill "$watchdog" 2>/dev/null
+    wait "$watchdog" 2>/dev/null
+    return $ret
+  fi
+}
+
 log() {
   printf '%s\n' "$*"
 }
