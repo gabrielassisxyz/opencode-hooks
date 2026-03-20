@@ -1113,8 +1113,8 @@ describe("createHooksRuntime", () => {
 
     expect(command).toHaveBeenCalledTimes(2)
     expect(prompt).toHaveBeenCalledTimes(2)
-    expect(command.mock.calls.map((call) => (call.at(0) as { path: { id: string } } | undefined)?.path.id)).toEqual(["main-session", "main-session"])
-    expect(prompt.mock.calls.map((call) => (call.at(0) as { path: { id: string } } | undefined)?.path.id)).toEqual(["main-session", "main-session"])
+    expect(command.mock.calls.map((call) => ((call as unknown[])[0] as { path: { id: string } } | undefined)?.path.id)).toEqual(["main-session", "main-session"])
+    expect(prompt.mock.calls.map((call) => ((call as unknown[])[0] as { path: { id: string } } | undefined)?.path.id)).toEqual(["main-session", "main-session"])
   })
 
   it("keeps current-session routing for command and tool actions when runIn is omitted", async () => {
