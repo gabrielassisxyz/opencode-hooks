@@ -57,6 +57,8 @@ OPENCODE_COMMIT_MODEL="opencode/big-pickle"
 OPENCODE_COMMIT_AGENT="build"
 OPENCODE_CHILD_GUARD_VAR="OPENCODE_ATOMIC_COMMIT_CHILD"
 
+LOCKFILE="/tmp/atomic-commit-opencode.lock"
+
 log() {
   printf '%s\n' "$*"
 }
@@ -95,8 +97,10 @@ for line in lines[1:]:
     if cleaned:
         body_inputs.append(cleaned)
 
+# Only add body bullets if the AI actually provided them
 if not body_inputs:
-    body_inputs = ["Preserve atomic commit behavior with a formatted message"]
+    print(subject)
+    sys.exit(0)
 
 wrapped_bullets = []
 for bullet in body_inputs:
@@ -106,13 +110,11 @@ for bullet in body_inputs:
     for part in parts:
         wrapped_bullets.append(f"- {part}")
 
-if not wrapped_bullets:
-    wrapped_bullets = ["- Preserve atomic commit behavior with a formatted message"]
-
 print(subject)
-print()
-for bullet in wrapped_bullets:
-    print(bullet[:72])
+if wrapped_bullets:
+    print()
+    for bullet in wrapped_bullets:
+        print(bullet[:72])
 PY
 }
 
@@ -151,7 +153,7 @@ Generate a commit message for this edit."
 
   if command -v opencode >/dev/null 2>&1; then
     local generated cleaned
-    generated="$(env "$OPENCODE_CHILD_GUARD_VAR=1" NO_COLOR=1 TERM=dumb opencode run "${SYSTEM_PROMPT}
+    generated="$(timeout 25 env "$OPENCODE_CHILD_GUARD_VAR=1" NO_COLOR=1 TERM=dumb opencode run "${SYSTEM_PROMPT}
 
 ${user_msg}" --model "$OPENCODE_COMMIT_MODEL" --agent "$OPENCODE_COMMIT_AGENT" 2>/dev/null || true)"
     if [[ -n "$generated" ]]; then
@@ -175,9 +177,12 @@ print("\n".join(filtered))')"
     fi
   fi
 
-  sanitize_commit_message "Modify ${file_label}
-
-- Preserve atomic commit behavior when AI message generation is unavailable"
+  # Fallback: status-aware deterministic message
+  case "$file_status" in
+    new)     echo "Add ${file_label}" ;;
+    deleted) echo "Remove ${file_label}" ;;
+    *)       echo "Modify ${file_label}" ;;
+  esac
 }
 
 ensure_repo_root() {
@@ -259,6 +264,25 @@ determine_primary_status() {
   esac
 }
 
+# Acquire lock to prevent concurrent hook instances from racing
+acquire_lock() {
+  local max_wait=30 waited=0
+  while ! mkdir "$LOCKFILE" 2>/dev/null; do
+    if [[ $waited -ge $max_wait ]]; then
+      log "atomic-commit: timeout waiting for lock" >&2
+      return 1
+    fi
+    sleep 0.5
+    waited=$((waited + 1))
+  done
+  trap 'rm -rf "$LOCKFILE"' EXIT
+  return 0
+}
+
+release_lock() {
+  rm -rf "$LOCKFILE"
+}
+
 commit_staged_changes() {
   local file_label="$1"
 
@@ -290,8 +314,11 @@ for line in sys.stdin:
     return 0
   fi
 
-  git commit -m "$commit_msg" --no-verify 2>&1
-  log "Committed: $(first_line "$commit_msg")"
+  if git commit -m "$commit_msg" --no-verify 2>&1; then
+    log "Committed: $(first_line "$commit_msg")"
+  else
+    log "atomic-commit: commit failed for $file_label" >&2
+  fi
 }
 
 run_each_mode() {
@@ -316,10 +343,18 @@ print(sum(1 for line in sys.stdin if line.strip()))')"
 
   while IFS= read -r file; do
     [[ -z "$file" ]] && continue
+
+    acquire_lock || continue
+
     git reset HEAD -- . >/dev/null 2>&1 || true
     git add -- "$file" 2>/dev/null || true
-    git diff --cached --quiet 2>/dev/null && continue
+    if git diff --cached --quiet 2>/dev/null; then
+      release_lock
+      continue
+    fi
     commit_staged_changes "$file"
+
+    release_lock
   done <<< "$all_files"
 
   log "Done."
@@ -349,19 +384,47 @@ run_hook_mode() {
   repo_root="$(ensure_repo_root "$project_dir")" || exit 0
   cd "$repo_root" || exit 0
 
+  # Acquire lock before any staging/commit operations
+  acquire_lock || exit 0
+
   if [[ "$tool_name" == "bash" ]]; then
-    git add -A 2>/dev/null || true
+    # Stage only files with actual changes — not blindly everything
+    local changed_files deleted_files untracked_files already_staged all_changed
+    changed_files=$(git diff --name-only 2>/dev/null || true)
+    deleted_files=$(git ls-files --deleted 2>/dev/null || true)
+    untracked_files=$(git ls-files --others --exclude-standard 2>/dev/null || true)
+    already_staged=$(git diff --cached --name-only 2>/dev/null || true)
+
+    all_changed=$(printf '%s\n%s\n%s\n%s' "$changed_files" "$deleted_files" "$untracked_files" "$already_staged" | sort -u | grep -v '^$' || true)
+
+    if [[ -z "$all_changed" ]]; then
+      release_lock
+      exit 0
+    fi
+
+    while IFS= read -r f; do
+      [[ -n "$f" ]] && git add -- "$f" 2>/dev/null || true
+    done <<< "$all_changed"
+
+    if git diff --cached --quiet 2>/dev/null; then
+      release_lock
+      exit 0
+    fi
+
     commit_staged_changes "bash changes"
+    release_lock
     exit 0
   fi
 
   if [[ "$tool_name" == "apply_patch" ]]; then
     patch_paths="$(printf '%s' "$input_json" | extract_apply_patch_paths)"
     if [[ -z "$patch_paths" ]]; then
+      release_lock
       exit 0
     fi
 
     if ! stage_paths <<< "$patch_paths"; then
+      release_lock
       exit 0
     fi
 
@@ -374,13 +437,14 @@ elif len(paths) == 1:
 else:
     print(f"{paths[0]} (and {len(paths) - 1} more)")')"
     commit_staged_changes "$label"
+    release_lock
     exit 0
   fi
 
   case "$tool_name" in
     write|edit|multiedit)
       file_path="$(printf '%s' "$input_json" | extract_opencode_file_path)"
-      [[ -z "$file_path" ]] && exit 0
+      [[ -z "$file_path" ]] && { release_lock; exit 0; }
       if [[ "$file_path" != /* ]]; then
         file_path="$project_dir/$file_path"
       fi
@@ -395,13 +459,19 @@ print(os.path.relpath(sys.argv[1], sys.argv[2]))
 PY
 )"
       git add -- "$label" 2>/dev/null || true
-      git diff --cached --quiet 2>/dev/null && exit 0
+      if git diff --cached --quiet 2>/dev/null; then
+        release_lock
+        exit 0
+      fi
       commit_staged_changes "$label"
       ;;
     *)
+      release_lock
       exit 0
       ;;
   esac
+
+  release_lock
 }
 
 if [[ "$EACH_MODE" -eq 1 ]]; then
