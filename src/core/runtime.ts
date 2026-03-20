@@ -5,10 +5,10 @@ import type { Hooks, PluginInput } from "@opencode-ai/plugin"
 
 import { executeBashHook } from "./bash-executor.js"
 import type { BashExecutionRequest } from "./bash-types.js"
-import { loadDiscoveredHooks } from "./load-hooks.js"
+import { loadDiscoveredHooksSnapshot } from "./load-hooks.js"
 import { SessionStateStore } from "./session-state.js"
 import { getChangedPaths, getMutationToolHookNames, getToolFileChanges } from "./tool-paths.js"
-import type { FileChange, HookAction, HookConfig, HookEvent, HookMap, HookRunIn } from "./types.js"
+import type { FileChange, HookAction, HookConfig, HookEvent, HookMap, HookRunIn, HookValidationError } from "./types.js"
 
 const CODE_EXTENSIONS = new Set([
   ".ts",
@@ -139,20 +139,49 @@ export interface CreateHooksRuntimeOptions {
 }
 
 export function createHooksRuntime(input: PluginInput, options: CreateHooksRuntimeOptions = {}): Hooks {
-  const loaded = options.hooks ? { hooks: options.hooks, errors: [] } : loadDiscoveredHooks({ projectDir: input.directory })
+  let loaded = options.hooks
+    ? { hooks: options.hooks, errors: [] as HookValidationError[], signature: "manual" }
+    : loadDiscoveredHooksSnapshot({ projectDir: input.directory })
   if (loaded.errors.length > 0) {
     console.error(formatHookLoadErrors(loaded.errors))
   }
 
-  const hooks = loaded.hooks
+  let hooks = loaded.hooks
+  let lastLoadedSignature = loaded.signature
+  let lastReportedInvalidSignature = loaded.errors.length > 0 ? loaded.signature : undefined
   const state = new SessionStateStore()
   const runBashHook = options.executeBash ?? executeBashHook
   const activeDispatches = new Set<string>()
   const activeActionTargets = new Set<string>()
   const worktreeDirectoryPromise = Promise.resolve(resolveWorktreeDirectory(input.directory))
 
+  function refreshHooks(): HookMap {
+    if (options.hooks) {
+      return hooks
+    }
+
+    const nextLoaded = loadDiscoveredHooksSnapshot({ projectDir: input.directory })
+    if (nextLoaded.signature === lastLoadedSignature) {
+      return hooks
+    }
+
+    lastLoadedSignature = nextLoaded.signature
+    if (nextLoaded.errors.length > 0) {
+      if (lastReportedInvalidSignature !== nextLoaded.signature) {
+        console.error(formatHookReloadErrors(nextLoaded.errors))
+        lastReportedInvalidSignature = nextLoaded.signature
+      }
+      return hooks
+    }
+
+    hooks = nextLoaded.hooks
+    lastReportedInvalidSignature = undefined
+    return hooks
+  }
+
   return {
     "tool.execute.before": async (eventInput: ToolExecuteBeforeInput, eventOutput: ToolExecuteBeforeOutput): Promise<void> => {
+      const activeHooks = refreshHooks()
       const sessionID = eventInput.sessionID
       if (!sessionID) {
         return
@@ -162,7 +191,7 @@ export function createHooksRuntime(input: PluginInput, options: CreateHooksRunti
       state.setPendingToolCall(eventInput.callID, sessionID, toolArgs)
 
       const result = await dispatchToolHooks(
-        hooks,
+        activeHooks,
         state,
         input,
         runBashHook,
@@ -185,6 +214,7 @@ export function createHooksRuntime(input: PluginInput, options: CreateHooksRunti
     },
 
     "tool.execute.after": async (eventInput: ToolExecuteAfterInput, _eventOutput?: unknown): Promise<void> => {
+      const activeHooks = refreshHooks()
       const sessionID = eventInput.sessionID
       if (!sessionID) {
         return
@@ -198,7 +228,7 @@ export function createHooksRuntime(input: PluginInput, options: CreateHooksRunti
       state.addFileChanges(sessionID, changes)
 
       if (changes.length > 0) {
-        await dispatchHooks(hooks, state, input, runBashHook, "file.changed", sessionID, {
+        await dispatchHooks(activeHooks, state, input, runBashHook, "file.changed", sessionID, {
           files,
           changes,
           toolName: eventInput.tool,
@@ -207,7 +237,7 @@ export function createHooksRuntime(input: PluginInput, options: CreateHooksRunti
       }
 
       await dispatchToolHooks(
-        hooks,
+        activeHooks,
         state,
         input,
         runBashHook,
@@ -227,6 +257,7 @@ export function createHooksRuntime(input: PluginInput, options: CreateHooksRunti
     },
 
     event: async ({ event }: RuntimeEventEnvelope): Promise<void> => {
+      const activeHooks = refreshHooks()
       const properties = event.properties ?? {}
 
       if (event.type === "session.created") {
@@ -237,7 +268,7 @@ export function createHooksRuntime(input: PluginInput, options: CreateHooksRunti
         }
 
         state.rememberSession(sessionID, pickString(info?.parentID) ?? null)
-        await dispatchHooks(hooks, state, input, runBashHook, "session.created", sessionID, {}, {}, activeDispatches, activeActionTargets, worktreeDirectoryPromise)
+        await dispatchHooks(activeHooks, state, input, runBashHook, "session.created", sessionID, {}, {}, activeDispatches, activeActionTargets, worktreeDirectoryPromise)
         return
       }
 
@@ -250,7 +281,7 @@ export function createHooksRuntime(input: PluginInput, options: CreateHooksRunti
         
         state.rememberSession(sessionID, pickString(info?.parentID) ?? undefined)
         state.deleteSession(sessionID)
-        await dispatchHooks(hooks, state, input, runBashHook, "session.deleted", sessionID, {}, {}, activeDispatches, activeActionTargets, worktreeDirectoryPromise)
+        await dispatchHooks(activeHooks, state, input, runBashHook, "session.deleted", sessionID, {}, {}, activeDispatches, activeActionTargets, worktreeDirectoryPromise)
         return
       }
 
@@ -265,7 +296,7 @@ export function createHooksRuntime(input: PluginInput, options: CreateHooksRunti
         state.beginIdleDispatch(sessionID, changes)
 
         try {
-          await dispatchHooks(hooks, state, input, runBashHook, "session.idle", sessionID, { files, changes }, {}, activeDispatches, activeActionTargets, worktreeDirectoryPromise)
+          await dispatchHooks(activeHooks, state, input, runBashHook, "session.idle", sessionID, { files, changes }, {}, activeDispatches, activeActionTargets, worktreeDirectoryPromise)
           state.consumeFileChanges(sessionID, changes)
         } catch (error) {
           state.cancelIdleDispatch(sessionID)
@@ -564,6 +595,11 @@ function hasCodeExtension(filePath: string): boolean {
 function formatHookLoadErrors(errors: Array<{ filePath: string; message: string; path?: string }>): string {
   const details = errors.map((error) => `${error.filePath}${error.path ? `#${error.path}` : ""}: ${error.message}`)
   return `[opencode-hooks] Failed to load some hooks; continuing with valid hooks:\n${details.join("\n")}`
+}
+
+function formatHookReloadErrors(errors: Array<{ filePath: string; message: string; path?: string }>): string {
+  const details = errors.map((error) => `${error.filePath}${error.path ? `#${error.path}` : ""}: ${error.message}`)
+  return `[opencode-hooks] Failed to reload hooks.yaml; keeping last known good hooks:\n${details.join("\n")}`
 }
 
 function resolveWorktreeDirectory(directory: string): string {
