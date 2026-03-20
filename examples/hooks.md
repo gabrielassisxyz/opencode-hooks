@@ -58,6 +58,11 @@ hooks:
       - bash: |
           file=$(cat | jq -r '.tool_args.filePath // .tool_args.file_path // .tool_args.path')
           echo "edited $file"
+          
+  - event: tool.after.*
+    actions:
+      - bash: "$HOME/.config/opencode/hook/atomic-commit.sh"
+      
 ---
 ```
 
