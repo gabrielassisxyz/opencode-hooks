@@ -274,6 +274,7 @@ async function dispatchToolHooks(
   runBashHook: ExecuteBashHook,
   activeDispatches: Set<string>,
   activeActionTargets: Set<string>,
+  worktreeDirectoryPromise: Promise<string>,
   phase: "before" | "after",
   toolName: string,
   sessionID: string,
@@ -290,6 +291,7 @@ async function dispatchToolHooks(
     { canBlock: phase === "before" },
     activeDispatches,
     activeActionTargets,
+    worktreeDirectoryPromise,
   )
   if (wildcardResult.blocked) {
     return wildcardResult
@@ -307,6 +309,7 @@ async function dispatchToolHooks(
       { canBlock: phase === "before" },
       activeDispatches,
       activeActionTargets,
+      worktreeDirectoryPromise,
     )
 
     if (result.blocked) {
