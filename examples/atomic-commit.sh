@@ -264,7 +264,7 @@ for line in str(patch).splitlines():
             if path and path not in seen:
                 seen.add(path)
                 print(path)
-             break'
+            break'
 }
 
 extract_changed_paths() {
