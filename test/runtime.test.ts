@@ -80,10 +80,10 @@ describe("createHooksRuntime", () => {
 
   it("tracks modified paths for mutation tools and only runs session.idle hooks when code changed", async () => {
     const { input } = createMockPluginInput()
-    const idleContexts: Array<readonly string[] | undefined> = []
+    const idleContexts: Array<{ files?: readonly string[]; changes?: readonly unknown[] }> = []
     const executeBash = vi.fn(async ({ context }) => {
       if (context.event === "session.idle") {
-        idleContexts.push(context.files)
+        idleContexts.push({ files: context.files, changes: context.changes })
       }
 
       return {
@@ -150,7 +150,104 @@ describe("createHooksRuntime", () => {
     )
     await runtime.event?.({ event: { type: "session.idle", properties: { sessionID: "session-1" } } } as never)
 
-    expect(idleContexts).toEqual([["schema/query.graphql", "docs/notes.md"]])
+    expect(idleContexts).toEqual([
+      {
+        files: ["schema/query.graphql", "docs/notes.md"],
+        changes: [
+          { operation: "modify", path: "schema/query.graphql" },
+          { operation: "create", path: "docs/notes.md" },
+        ],
+      },
+    ])
+  })
+
+  it("dispatches file.changed with structured changes and preserves patch hook aliases", async () => {
+    const { input } = createMockPluginInput()
+    const observedEvents: Array<{ event: string; files?: readonly string[]; changes?: readonly unknown[] }> = []
+    const executeBash = vi.fn(async ({ context }) => {
+      observedEvents.push({ event: context.event, files: context.files, changes: context.changes })
+
+      return {
+        command: "hook",
+        stdout: "",
+        stderr: "",
+        durationMs: 1,
+        exitCode: 0,
+        signal: null,
+        timedOut: false,
+        status: "success" as const,
+        blocking: false,
+      }
+    })
+
+    const hooks: HookMap = new Map([
+      [["file.changed" as const][0], [{ event: "file.changed", actions: [{ bash: "hook" }], source: { filePath: "a", index: 0 } }]],
+      [["tool.after.patch" as const][0], [{ event: "tool.after.patch", actions: [{ bash: "hook" }], source: { filePath: "a", index: 1 } }]],
+      [["tool.after.apply_patch" as const][0], [{ event: "tool.after.apply_patch", actions: [{ bash: "hook" }], source: { filePath: "a", index: 2 } }]],
+    ])
+
+    const runtime = createHooksRuntime(input as never, { hooks, executeBash })
+
+    await runtime["tool.execute.before"]?.(
+      { tool: "patch", sessionID: "session-1", callID: "call-patch" },
+      {
+        args: {
+          patch: [
+            "*** Begin Patch",
+            "*** Update File: src/write.ts",
+            "@@",
+            "-old",
+            "+new",
+            "*** Delete File: src/old.ts",
+            "*** Update File: src/rename-me.ts",
+            "*** Move to: src/renamed.ts",
+            "@@",
+            "-before rename",
+            "+after rename",
+            "*** Add File: src/new.ts",
+            "+new file",
+            "*** End Patch",
+          ].join("\n"),
+        },
+      },
+    )
+    await runtime["tool.execute.after"]?.(
+      { tool: "patch", sessionID: "session-1", callID: "call-patch", args: {} },
+      { title: "", output: "", metadata: {} },
+    )
+
+    expect(observedEvents).toEqual([
+      {
+        event: "file.changed",
+        files: ["src/write.ts", "src/old.ts", "src/rename-me.ts", "src/renamed.ts", "src/new.ts"],
+        changes: [
+          { operation: "modify", path: "src/write.ts" },
+          { operation: "delete", path: "src/old.ts" },
+          { operation: "rename", fromPath: "src/rename-me.ts", toPath: "src/renamed.ts" },
+          { operation: "create", path: "src/new.ts" },
+        ],
+      },
+      {
+        event: "tool.after.patch",
+        files: ["src/write.ts", "src/old.ts", "src/rename-me.ts", "src/renamed.ts", "src/new.ts"],
+        changes: [
+          { operation: "modify", path: "src/write.ts" },
+          { operation: "delete", path: "src/old.ts" },
+          { operation: "rename", fromPath: "src/rename-me.ts", toPath: "src/renamed.ts" },
+          { operation: "create", path: "src/new.ts" },
+        ],
+      },
+      {
+        event: "tool.after.apply_patch",
+        files: ["src/write.ts", "src/old.ts", "src/rename-me.ts", "src/renamed.ts", "src/new.ts"],
+        changes: [
+          { operation: "modify", path: "src/write.ts" },
+          { operation: "delete", path: "src/old.ts" },
+          { operation: "rename", fromPath: "src/rename-me.ts", toPath: "src/renamed.ts" },
+          { operation: "create", path: "src/new.ts" },
+        ],
+      },
+    ])
   })
 
   it("tracks write, edit, multiedit, and apply_patch paths for session.idle and clears them after dispatch", async () => {
