@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks"
 import { extname } from "node:path"
 
 import type { Hooks, PluginInput } from "@opencode-ai/plugin"
@@ -163,7 +164,7 @@ export function createHooksRuntime(input: PluginInput, options: CreateHooksRunti
   const state = new SessionStateStore()
   const runBashHook = options.executeBash ?? executeBashHook
   const dispatchStates = new Map<string, DispatchState>()
-  const activeActionTargets = new Set<string>()
+  const actionRecursionGuards = new AsyncLocalStorage<Set<string>>()
 
   function refreshHooks(): HookMap {
     if (options.hooks) {
@@ -206,7 +207,7 @@ export function createHooksRuntime(input: PluginInput, options: CreateHooksRunti
         input,
         runBashHook,
         dispatchStates,
-        activeActionTargets,
+        actionRecursionGuards,
         "before",
         eventInput.tool,
         sessionID,
@@ -242,7 +243,7 @@ export function createHooksRuntime(input: PluginInput, options: CreateHooksRunti
           changes,
           toolName: eventInput.tool,
           toolArgs,
-        }, {}, dispatchStates, activeActionTargets)
+        }, {}, dispatchStates, actionRecursionGuards)
       }
 
       await dispatchToolHooks(
@@ -251,7 +252,7 @@ export function createHooksRuntime(input: PluginInput, options: CreateHooksRunti
         input,
         runBashHook,
         dispatchStates,
-        activeActionTargets,
+        actionRecursionGuards,
         "after",
         eventInput.tool,
         sessionID,
@@ -276,7 +277,7 @@ export function createHooksRuntime(input: PluginInput, options: CreateHooksRunti
         }
 
         state.rememberSession(sessionID, pickString(info?.parentID) ?? null)
-        await dispatchHooks(activeHooks, state, input, runBashHook, "session.created", sessionID, {}, {}, dispatchStates, activeActionTargets)
+        await dispatchHooks(activeHooks, state, input, runBashHook, "session.created", sessionID, {}, {}, dispatchStates, actionRecursionGuards)
         return
       }
 
@@ -289,7 +290,7 @@ export function createHooksRuntime(input: PluginInput, options: CreateHooksRunti
         
         state.rememberSession(sessionID, pickString(info?.parentID) ?? undefined)
         state.deleteSession(sessionID)
-        await dispatchHooks(activeHooks, state, input, runBashHook, "session.deleted", sessionID, {}, {}, dispatchStates, activeActionTargets)
+        await dispatchHooks(activeHooks, state, input, runBashHook, "session.deleted", sessionID, {}, {}, dispatchStates, actionRecursionGuards)
         return
       }
 
@@ -304,7 +305,7 @@ export function createHooksRuntime(input: PluginInput, options: CreateHooksRunti
         state.beginIdleDispatch(sessionID, changes)
 
         try {
-          await dispatchHooks(activeHooks, state, input, runBashHook, "session.idle", sessionID, { files, changes }, {}, dispatchStates, activeActionTargets)
+          await dispatchHooks(activeHooks, state, input, runBashHook, "session.idle", sessionID, { files, changes }, {}, dispatchStates, actionRecursionGuards)
           state.consumeFileChanges(sessionID, changes)
         } catch (error) {
           state.cancelIdleDispatch(sessionID)
