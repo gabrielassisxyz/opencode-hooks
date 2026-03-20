@@ -449,7 +449,7 @@ run_hook_mode() {
   [[ -z "$project_dir" ]] && exit 0
 
   case "$event" in
-    file.changed|tool.after.*) ;;
+    file.changed|tool.after.\*|tool.after.*) ;;
     *) exit 0 ;;
   esac
 
