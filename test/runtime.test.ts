@@ -551,6 +551,122 @@ describe("createHooksRuntime", () => {
     expect(idleContexts).toEqual([["src/initial.ts"], ["src/during-idle.ts"]])
   })
 
+  it("queues reentrant file.changed redispatches instead of dropping them", async () => {
+    const { input } = createMockPluginInput()
+    const observedFiles: Array<readonly string[] | undefined> = []
+    let runtime: ReturnType<typeof createHooksRuntime>
+    let injectedChange = false
+
+    const executeBash = vi.fn(async ({ context }) => {
+      if (context.event === "file.changed") {
+        observedFiles.push(context.files)
+
+        if (!injectedChange) {
+          injectedChange = true
+          await runtime["tool.execute.before"]?.(
+            { tool: "write", sessionID: "session-1", callID: "call-during-file-changed" },
+            { args: { filePath: "src/queued.ts", value: "queued" } },
+          )
+          await runtime["tool.execute.after"]?.(
+            { tool: "write", sessionID: "session-1", callID: "call-during-file-changed", args: {} },
+            { title: "", output: "", metadata: {} },
+          )
+        }
+      }
+
+      return {
+        command: "hook",
+        stdout: "",
+        stderr: "",
+        durationMs: 1,
+        exitCode: 0,
+        signal: null,
+        timedOut: false,
+        status: "success" as const,
+        blocking: false,
+      }
+    })
+
+    const hooks: HookMap = new Map([
+      [["file.changed" as const][0], [createHook("file.changed", { actions: [{ bash: "hook" }], source: { filePath: "a", index: 0 } })]],
+    ])
+
+    runtime = createHooksRuntime(input as never, { hooks, executeBash })
+
+    await runtime["tool.execute.before"]?.(
+      { tool: "write", sessionID: "session-1", callID: "call-initial" },
+      { args: { filePath: "src/initial.ts", value: "initial" } },
+    )
+    await runtime["tool.execute.after"]?.(
+      { tool: "write", sessionID: "session-1", callID: "call-initial", args: {} },
+      { title: "", output: "", metadata: {} },
+    )
+
+    expect(observedFiles).toEqual([["src/initial.ts"], ["src/queued.ts"]])
+  })
+
+  it("queues reentrant tool.after redispatches with their own tool args", async () => {
+    const { input } = createMockPluginInput()
+    const observedAfterContexts: Array<{ files?: readonly string[]; toolArgs?: Record<string, unknown> }> = []
+    let runtime: ReturnType<typeof createHooksRuntime>
+    let injectedChange = false
+
+    const executeBash = vi.fn(async ({ context }) => {
+      if (context.event === "tool.after.write") {
+        observedAfterContexts.push({ files: context.files, toolArgs: context.tool_args })
+
+        if (!injectedChange) {
+          injectedChange = true
+          await runtime["tool.execute.before"]?.(
+            { tool: "write", sessionID: "session-1", callID: "call-during-tool-after" },
+            { args: { filePath: "src/queued-after.ts", value: "queued-after" } },
+          )
+          await runtime["tool.execute.after"]?.(
+            {
+              tool: "write",
+              sessionID: "session-1",
+              callID: "call-during-tool-after",
+              args: { filePath: "src/queued-after-final.ts", value: "queued-after-final" },
+            },
+            { title: "", output: "", metadata: {} },
+          )
+        }
+      }
+
+      return {
+        command: "hook",
+        stdout: "",
+        stderr: "",
+        durationMs: 1,
+        exitCode: 0,
+        signal: null,
+        timedOut: false,
+        status: "success" as const,
+        blocking: false,
+      }
+    })
+
+    const hooks: HookMap = new Map([
+      [["tool.after.write" as const][0], [createHook("tool.after.write", { actions: [{ bash: "hook" }], source: { filePath: "a", index: 0 } })]],
+    ])
+
+    runtime = createHooksRuntime(input as never, { hooks, executeBash })
+
+    await runtime["tool.execute.before"]?.(
+      { tool: "write", sessionID: "session-1", callID: "call-initial" },
+      { args: { filePath: "src/initial-after.ts", value: "initial-after" } },
+    )
+    await runtime["tool.execute.after"]?.(
+      { tool: "write", sessionID: "session-1", callID: "call-initial", args: {} },
+      { title: "", output: "", metadata: {} },
+    )
+
+    expect(observedAfterContexts).toEqual([
+      { files: ["src/initial-after.ts"], toolArgs: {} },
+      { files: ["src/queued-after-final.ts"], toolArgs: { filePath: "src/queued-after-final.ts", value: "queued-after-final" } },
+    ])
+  })
+
   it("blocks tool.before execution when a hook returns exit code 2", async () => {
     const { input } = createMockPluginInput()
     const executeBash = vi.fn(async ({ context }) => ({
@@ -1048,7 +1164,7 @@ describe("createHooksRuntime", () => {
     errorSpy.mockRestore()
   })
 
-  it("uses the worktree root for runIn main command and tool actions", async () => {
+  it("keeps the action cwd for runIn main command and tool actions", async () => {
     const { input, command, prompt } = createMockPluginInput()
     const directory = path.join(process.cwd(), "src", "core")
     const hooks: HookMap = new Map([
@@ -1080,7 +1196,7 @@ describe("createHooksRuntime", () => {
     expect(command).toHaveBeenCalledWith({
       path: { id: "main-session" },
       body: { command: "review-pr", arguments: "--summary" },
-      query: { directory: process.cwd() },
+      query: { directory },
     })
     expect(prompt).toHaveBeenCalledWith({
       path: { id: "main-session" },
@@ -1092,7 +1208,7 @@ describe("createHooksRuntime", () => {
           },
         ],
       },
-      query: { directory: process.cwd() },
+      query: { directory },
     })
   })
 })
