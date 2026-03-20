@@ -91,6 +91,18 @@ log() {
   printf '%s\n' "$*"
 }
 
+# Ensure a label is never an absolute path — strip to relative from repo root.
+# Falls back to basename if relpath fails.
+ensure_relative_label() {
+  local label="$1"
+  # If it doesn't start with /, it's already relative
+  [[ "$label" != /* ]] && { printf '%s' "$label"; return; }
+  # Try to make it relative to repo root
+  local repo_root
+  repo_root="$(git rev-parse --show-toplevel 2>/dev/null)" || { basename "$label"; return; }
+  python3 -c 'import os,sys; print(os.path.relpath(sys.argv[1], sys.argv[2]))' "$label" "$repo_root" 2>/dev/null || basename "$label"
+}
+
 first_line() {
   python3 - <<'PY' "$1"
 import sys
@@ -205,11 +217,13 @@ print("\n".join(filtered))')"
     fi
   fi
 
-  # Fallback: status-aware deterministic message
+  # Fallback: status-aware deterministic message (ensure no absolute paths)
+  local safe_label
+  safe_label="$(ensure_relative_label "$file_label")"
   case "$file_status" in
-    new)     echo "Add ${file_label}" ;;
-    deleted) echo "Remove ${file_label}" ;;
-    *)       echo "Modify ${file_label}" ;;
+    new)     echo "Add ${safe_label}" ;;
+    deleted) echo "Remove ${safe_label}" ;;
+    *)       echo "Modify ${safe_label}" ;;
   esac
 }
 
@@ -460,8 +474,23 @@ run_hook_mode() {
       exit 0
     fi
 
-    label="$(printf '%s\n' "$changed_paths" | python3 -c 'import sys
-paths = [line.strip() for line in sys.stdin if line.strip()]
+    label="$(printf '%s\n' "$changed_paths" | python3 -c 'import os, sys
+repo = None
+try:
+    import subprocess
+    repo = subprocess.check_output(["git", "rev-parse", "--show-toplevel"], text=True).strip()
+except Exception:
+    pass
+paths = []
+for line in sys.stdin:
+    p = line.strip()
+    if not p:
+        continue
+    if p.startswith("/") and repo:
+        p = os.path.relpath(p, repo)
+    elif p.startswith("/"):
+        p = os.path.basename(p)
+    paths.append(p)
 if not paths:
     print("reported file changes")
 elif len(paths) == 1:
@@ -485,8 +514,23 @@ else:
       exit 0
     fi
 
-    label="$(printf '%s\n' "$patch_paths" | python3 -c 'import sys
-paths = [line.strip() for line in sys.stdin if line.strip()]
+    label="$(printf '%s\n' "$patch_paths" | python3 -c 'import os, sys
+repo = None
+try:
+    import subprocess
+    repo = subprocess.check_output(["git", "rev-parse", "--show-toplevel"], text=True).strip()
+except Exception:
+    pass
+paths = []
+for line in sys.stdin:
+    p = line.strip()
+    if not p:
+        continue
+    if p.startswith("/") and repo:
+        p = os.path.relpath(p, repo)
+    elif p.startswith("/"):
+        p = os.path.basename(p)
+    paths.append(p)
 if not paths:
     print("patched files")
 elif len(paths) == 1:
@@ -515,6 +559,9 @@ import os, sys
 print(os.path.relpath(sys.argv[1], sys.argv[2]))
 PY
 )"
+      # Safety: if relpath failed or returned absolute, fix it
+      label="$(ensure_relative_label "$label")"
+      [[ -z "$label" ]] && { release_lock; exit 0; }
       git add -- "$label" 2>/dev/null || true
       if git diff --cached --quiet 2>/dev/null; then
         release_lock
