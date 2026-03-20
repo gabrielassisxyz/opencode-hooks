@@ -69,7 +69,7 @@ hooks:
       - command: simplify-changes
 ```
 
-### Frontmatter schema
+### hooks.yaml schema
 
 ```yaml
 hooks:
@@ -118,8 +118,8 @@ Validation rules enforced by the runtime:
 |---|---|
 | `tool.before.*` | Before every tool execution |
 | `tool.before.<name>` | Before a specific tool, such as `tool.before.write` |
-| `tool.after.*` | After every tool execution |
-| `tool.after.<name>` | After a specific tool, such as `tool.after.edit` |
+| `tool.after.*` | Advanced: after every tool execution |
+| `tool.after.<name>` | Advanced: after a specific tool, such as `tool.after.edit` |
 | `file.changed` | After a mutation tool reports file changes |
 
 Tool hook order for a tool named `write`:
@@ -160,7 +160,8 @@ Important caveats:
 
 - the exact available tool set can vary by OpenCode version, enabled experimental features, providers, custom tools, and MCP servers
 - some environments expose tool names that differ slightly from the built-in docs, such as `apply_patch`
-- if you want a hook to apply to everything, prefer `tool.before.*` or `tool.after.*`
+- if you want file automation, prefer `file.changed` over `tool.after.*` so the hook only receives explicit file-change payloads
+- treat `tool.after.*` and `tool.after.<name>` as advanced escape hatches for non-file workflows or tool-level observability
 - if you want a hook for one specific tool, use the exact emitted tool name, such as `write`, `edit`, `multiedit`, or `apply_patch`
 
 ## Conditions
@@ -172,6 +173,8 @@ All configured conditions must pass for a hook to run.
 | `hasCodeChange` | Run only when tracked modified files include at least one supported code extension |
 
 Use `scope: main` when you want a hook to run only for the root session, or `scope: child` when you only want child-session events.
+
+Use `runIn: main` when an action should execute in the root session even if a child session triggered the event. This is useful for commands such as `review-pr` that should stay attached to the main conversation.
 
 Extensions treated as code by `hasCodeChange`:
 
@@ -259,6 +262,25 @@ For tool hooks, the runtime also sends tool context:
 }
 ```
 
+For `file.changed`, bash actions also receive structured change metadata:
+
+```json
+{
+  "session_id": "abc123",
+  "event": "file.changed",
+  "cwd": "/path/to/project",
+  "files": ["src/index.ts", "src/renamed.ts"],
+  "changes": [
+    { "operation": "modify", "path": "src/index.ts" },
+    { "operation": "rename", "fromPath": "src/old.ts", "toPath": "src/renamed.ts" }
+  ],
+  "tool_name": "apply_patch",
+  "tool_args": {
+    "patchText": "*** Begin Patch\\n...\\n*** End Patch"
+  }
+}
+```
+
 ### Exit code semantics
 
 | Exit code | Meaning |
@@ -325,7 +347,7 @@ Behavior details:
 
 ## Examples
 
-See [`examples/hooks.md`](examples/hooks.md) for a copy-pasteable operator guide that covers all supported events.
+See [`examples/hooks.yaml`](examples/hooks.yaml) for a copy-pasteable operator guide that covers the recommended `file.changed` flow, clear `scope` and `runIn` examples, and advanced `tool.after.*` usage.
 
 ### Minimal project-local file
 
@@ -350,6 +372,60 @@ hooks:
           name: review-pr
           args: "main feature"
 ```
+
+### Prefer `file.changed` for file automation
+
+```yaml
+hooks:
+  - event: file.changed
+    scope: main
+    conditions: [hasCodeChange]
+    actions:
+      - bash:
+          command: "npm run lint -- --fix"
+          timeout: 30000
+      - bash: "$HOME/.config/opencode/hook/atomic-commit.sh"
+```
+
+This is the recommended public API for file-oriented automation because the runtime passes the exact changed paths and structured `changes` metadata. It avoids the ambiguity of catch-all `tool.after.*` hooks.
+
+### `scope` and `runIn` together
+
+```yaml
+hooks:
+  - event: file.changed
+    scope: all
+    runIn: main
+    actions:
+      - command:
+          name: review-pr
+          args: "main feature"
+```
+
+- `scope: all` means both main and child sessions can trigger the hook.
+- `runIn: main` means the follow-up command runs in the root session.
+
+### Advanced: observe every tool after execution
+
+```yaml
+hooks:
+  - event: tool.after.*
+    actions:
+      - bash: |
+          context=$(cat)
+          echo "advanced after hook for $(echo "$context" | jq -r '.tool_name')"
+```
+
+Use this only when you truly need tool-level observability. For automations tied to changed files, prefer `file.changed` instead.
+
+### Atomic commit sample safety notes
+
+The bundled [`examples/atomic-commit.sh`](examples/atomic-commit.sh) sample is intentionally conservative:
+
+- it is meant to run from `file.changed`, not a catch-all `tool.after.*` hook
+- it stages only the paths reported in the hook payload
+- it respects normal git hooks and does not use `git commit --no-verify`
+- if a commit fails, the script logs the failure so you can inspect the staged diff manually
 
 ### Manual review checklist for supported events
 

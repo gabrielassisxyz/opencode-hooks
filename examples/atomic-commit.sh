@@ -5,16 +5,22 @@ set -euo pipefail
 #
 # Usage:
 #   Hook mode: receives OpenCode hook JSON on stdin.
-#     Intended for tool.after.* hooks, for example:
-#       - bash: "$HOME/.config/opencode/hook/atomic-commit.sh"
+#     Recommended wiring uses file.changed so the script stages only the paths
+#     reported by the runtime for supported mutation tools:
+#       - event: file.changed
+#         actions:
+#           - bash: "$HOME/.config/opencode/hook/atomic-commit.sh"
 #
 #   CLI mode:
 #     atomic-commit.sh --each [directory] [--dry-run]
 #     Commits each uncommitted file individually.
 #
 # Notes:
-# - In hook mode, only tool.after.* events are handled.
-# - Supports write, edit, multiedit, apply_patch, and bash.
+# - In hook mode, file.changed is preferred and tool.after mutation hooks are
+#   treated as advanced compatibility inputs.
+# - The script stages only explicit file paths from the hook payload; it never
+#   runs a blanket `git add -A` after arbitrary bash tool executions.
+# - Commits respect normal git hooks; this sample does not use --no-verify.
 # - Uses `opencode run ... --model ... --agent build` for commit messages when available,
 #   with a deterministic fallback.
 
@@ -258,7 +264,36 @@ for line in str(patch).splitlines():
             if path and path not in seen:
                 seen.add(path)
                 print(path)
-            break'
+             break'
+}
+
+extract_changed_paths() {
+  python3 -c 'import json, sys
+payload = json.load(sys.stdin)
+seen = set()
+for change in payload.get("changes") or []:
+    if not isinstance(change, dict):
+        continue
+    operation = change.get("operation")
+    candidates = []
+    if operation == "rename":
+        candidates.extend([change.get("fromPath"), change.get("toPath")])
+    else:
+        candidates.append(change.get("path"))
+    for candidate in candidates:
+        if isinstance(candidate, str) and candidate.strip() and candidate not in seen:
+            seen.add(candidate)
+            print(candidate)'
+}
+
+extract_files_array() {
+  python3 -c 'import json, sys
+payload = json.load(sys.stdin)
+seen = set()
+for candidate in payload.get("files") or []:
+    if isinstance(candidate, str) and candidate.strip() and candidate not in seen:
+        seen.add(candidate)
+        print(candidate)'
 }
 
 stage_paths() {
@@ -336,7 +371,7 @@ for line in sys.stdin:
     return 0
   fi
 
-  if git commit -m "$commit_msg" --no-verify 2>&1; then
+  if git commit -m "$commit_msg" 2>&1; then
     log "Committed: $(first_line "$commit_msg")"
   else
     log "atomic-commit: commit failed for $file_label" >&2
@@ -383,7 +418,7 @@ print(sum(1 for line in sys.stdin if line.strip()))')"
 }
 
 run_hook_mode() {
-  local input_json event tool_name cwd project_dir repo_root file_path patch_paths label
+  local input_json event tool_name cwd project_dir repo_root file_path patch_paths changed_paths label
   if [[ "${!OPENCODE_CHILD_GUARD_VAR:-}" == "1" ]]; then
     exit 0
   fi
@@ -399,7 +434,7 @@ run_hook_mode() {
   [[ -z "$project_dir" ]] && exit 0
 
   case "$event" in
-    tool.after.*) ;;
+    file.changed|tool.after.*) ;;
     *) exit 0 ;;
   esac
 
@@ -409,31 +444,31 @@ run_hook_mode() {
   # Acquire lock before any staging/commit operations
   acquire_lock || exit 0
 
-  if [[ "$tool_name" == "bash" ]]; then
-    # Stage only files with actual changes — not blindly everything
-    local changed_files deleted_files untracked_files already_staged all_changed
-    changed_files=$(git diff --name-only 2>/dev/null || true)
-    deleted_files=$(git ls-files --deleted 2>/dev/null || true)
-    untracked_files=$(git ls-files --others --exclude-standard 2>/dev/null || true)
-    already_staged=$(git diff --cached --name-only 2>/dev/null || true)
+  if [[ "$event" == "file.changed" ]]; then
+    changed_paths="$(printf '%s' "$input_json" | extract_changed_paths)"
+    if [[ -z "$changed_paths" ]]; then
+      changed_paths="$(printf '%s' "$input_json" | extract_files_array)"
+    fi
 
-    all_changed=$(printf '%s\n%s\n%s\n%s' "$changed_files" "$deleted_files" "$untracked_files" "$already_staged" | sort -u | grep -v '^$' || true)
-
-    if [[ -z "$all_changed" ]]; then
+    if [[ -z "$changed_paths" ]]; then
       release_lock
       exit 0
     fi
 
-    while IFS= read -r f; do
-      [[ -n "$f" ]] && git add -- "$f" 2>/dev/null || true
-    done <<< "$all_changed"
-
-    if git diff --cached --quiet 2>/dev/null; then
+    if ! stage_paths <<< "$changed_paths"; then
       release_lock
       exit 0
     fi
 
-    commit_staged_changes "bash changes"
+    label="$(printf '%s\n' "$changed_paths" | python3 -c 'import sys
+paths = [line.strip() for line in sys.stdin if line.strip()]
+if not paths:
+    print("reported file changes")
+elif len(paths) == 1:
+    print(paths[0])
+else:
+    print(f"{paths[0]} (and {len(paths) - 1} more)")')"
+    commit_staged_changes "$label"
     release_lock
     exit 0
   fi

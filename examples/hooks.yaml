@@ -1,0 +1,69 @@
+# Example hook configuration for operators.
+# Copy the parts you want into either:
+# - ~/.config/opencode/hook/hooks.yaml
+# - <project>/.opencode/hook/hooks.yaml
+
+hooks:
+  # Scope controls which session emits the event.
+  - event: session.created
+    scope: main
+    actions:
+      - bash: 'echo "main session started: $OPENCODE_SESSION_ID"'
+
+  - event: session.deleted
+    scope: main
+    actions:
+      - bash: 'echo "main session ended: $OPENCODE_SESSION_ID"'
+
+  # runIn controls where follow-up commands run.
+  # This keeps review-pr attached to the root session even if a child session
+  # triggered the hook.
+  - event: file.changed
+    scope: all
+    runIn: main
+    conditions: [hasCodeChange]
+    actions:
+      - bash:
+          command: "npm run lint -- --fix"
+          timeout: 30000
+      - command:
+          name: review-pr
+          args: "main feature"
+
+  - event: session.idle
+    scope: main
+    conditions: [hasCodeChange]
+    actions:
+      - bash: "npm test"
+
+  - event: tool.before.*
+    actions:
+      - bash: |
+          context=$(cat)
+          echo "before tool: $(echo "$context" | jq -r '.tool_name')"
+
+  - event: tool.before.write
+    actions:
+      - bash: |
+          file=$(cat | jq -r '.tool_args.filePath // .tool_args.file_path // .tool_args.path')
+          if echo "$file" | grep -qE '\.(env|pem|key)$'; then
+            echo "Cannot modify sensitive files: $file" >&2
+            exit 2
+          fi
+
+  # Advanced: tool.after hooks run for every matching tool execution.
+  # Prefer file.changed for file automation so hooks only see explicit mutation
+  # payloads from supported file-changing tools.
+  - event: tool.after.*
+    actions:
+      - bash: |
+          context=$(cat)
+          echo "advanced after hook for $(echo "$context" | jq -r '.tool_name')"
+
+  # Recommended atomic commit wiring: trigger on file.changed instead of
+  # tool.after.* so the script only stages paths reported by the runtime.
+  - event: file.changed
+    scope: main
+    conditions: [hasCodeChange]
+    actions:
+      - bash: "$HOME/.config/opencode/hook/atomic-commit.sh"
