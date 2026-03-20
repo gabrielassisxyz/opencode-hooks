@@ -23,7 +23,7 @@ function parsePatchPaths(patchText: string): string[] {
   const paths = new Set<string>()
 
   for (const line of patchText.split("\n")) {
-    const match = line.match(/^\*\*\* (?:Add|Update|Delete) File: (.+)$/)
+    const match = line.match(/^\*\*\* (?:(?:Add|Update|Delete) File|Move to): (.+)$/)
     if (match?.[1]) {
       paths.add(match[1].trim())
     }
