@@ -100,6 +100,40 @@ describe("parseHooksFile", () => {
       expect.objectContaining({ code: "invalid_hooks", path: "hooks" }),
     ])
   })
+
+  it("reports invalid runIn and legacy conditions while keeping valid hooks", () => {
+    const result = parseHooksFile(
+      "/repo/.opencode/hook/hooks.yaml",
+      `hooks:
+  - event: session.created
+    runIn: child
+    actions:
+      - bash: invalid-run-in
+  - event: session.idle
+    conditions: [hasCodeChanges]
+    actions:
+      - bash: invalid-condition
+  - event: tool.after.write
+    scope: child
+    runIn: main
+    conditions: [hasCodeChange]
+    actions:
+      - bash: valid
+`,
+    )
+
+    expect(result.hooks.get("tool.after.write")).toEqual([
+      expect.objectContaining({
+        scope: "child",
+        runIn: "main",
+        conditions: ["hasCodeChange"],
+      }),
+    ])
+    expect(result.errors).toEqual([
+      expect.objectContaining({ code: "invalid_run_in", path: "hooks[0].runIn" }),
+      expect.objectContaining({ code: "invalid_conditions", path: "hooks[1].conditions[0]" }),
+    ])
+  })
 })
 
 describe("hook config discovery", () => {
@@ -133,6 +167,24 @@ describe("hook config discovery", () => {
       path.join(homeDir, ".config", "opencode", "hook", "hooks.yaml"),
       path.join(projectDir, ".opencode", "hook", "hooks.yaml"),
     ])
+  })
+
+  it("ignores unsupported hooks.md locations during discovery", () => {
+    const homeDir = "/home/tester"
+    const projectDir = "/repo/project"
+    const markdownOnly = new Set([
+      path.join(homeDir, ".config", "opencode", "hook", "hooks.md"),
+      path.join(projectDir, ".opencode", "hook", "hooks.md"),
+    ])
+
+    const paths = discoverHookConfigPaths({
+      projectDir,
+      platform: "linux",
+      homeDir,
+      exists: (filePath) => markdownOnly.has(filePath),
+    })
+
+    expect(paths).toEqual([])
   })
 
   it("merges global hooks before project hooks", () => {
