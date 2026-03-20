@@ -1,4 +1,3 @@
-import { execFileSync } from "node:child_process"
 import { extname } from "node:path"
 
 import type { Hooks, PluginInput } from "@opencode-ai/plugin"
@@ -131,6 +130,11 @@ interface HookExecutionResult {
   readonly blockReason?: string
 }
 
+interface DispatchState {
+  active: boolean
+  pending: boolean
+}
+
 type ExecuteBashHook = (request: BashExecutionRequest) => ReturnType<typeof executeBashHook>
 
 export interface CreateHooksRuntimeOptions {
@@ -151,9 +155,8 @@ export function createHooksRuntime(input: PluginInput, options: CreateHooksRunti
   let lastReportedInvalidSignature = loaded.errors.length > 0 ? loaded.signature : undefined
   const state = new SessionStateStore()
   const runBashHook = options.executeBash ?? executeBashHook
-  const activeDispatches = new Set<string>()
+  const dispatchStates = new Map<string, DispatchState>()
   const activeActionTargets = new Set<string>()
-  const worktreeDirectoryPromise = Promise.resolve(resolveWorktreeDirectory(input.directory))
 
   function refreshHooks(): HookMap {
     if (options.hooks) {
@@ -195,9 +198,8 @@ export function createHooksRuntime(input: PluginInput, options: CreateHooksRunti
         state,
         input,
         runBashHook,
-        activeDispatches,
+        dispatchStates,
         activeActionTargets,
-        worktreeDirectoryPromise,
         "before",
         eventInput.tool,
         sessionID,
@@ -233,7 +235,7 @@ export function createHooksRuntime(input: PluginInput, options: CreateHooksRunti
           changes,
           toolName: eventInput.tool,
           toolArgs,
-        }, {}, activeDispatches, activeActionTargets, worktreeDirectoryPromise)
+        }, {}, dispatchStates, activeActionTargets)
       }
 
       await dispatchToolHooks(
@@ -241,9 +243,8 @@ export function createHooksRuntime(input: PluginInput, options: CreateHooksRunti
         state,
         input,
         runBashHook,
-        activeDispatches,
+        dispatchStates,
         activeActionTargets,
-        worktreeDirectoryPromise,
         "after",
         eventInput.tool,
         sessionID,
@@ -268,7 +269,7 @@ export function createHooksRuntime(input: PluginInput, options: CreateHooksRunti
         }
 
         state.rememberSession(sessionID, pickString(info?.parentID) ?? null)
-        await dispatchHooks(activeHooks, state, input, runBashHook, "session.created", sessionID, {}, {}, activeDispatches, activeActionTargets, worktreeDirectoryPromise)
+        await dispatchHooks(activeHooks, state, input, runBashHook, "session.created", sessionID, {}, {}, dispatchStates, activeActionTargets)
         return
       }
 
@@ -281,7 +282,7 @@ export function createHooksRuntime(input: PluginInput, options: CreateHooksRunti
         
         state.rememberSession(sessionID, pickString(info?.parentID) ?? undefined)
         state.deleteSession(sessionID)
-        await dispatchHooks(activeHooks, state, input, runBashHook, "session.deleted", sessionID, {}, {}, activeDispatches, activeActionTargets, worktreeDirectoryPromise)
+        await dispatchHooks(activeHooks, state, input, runBashHook, "session.deleted", sessionID, {}, {}, dispatchStates, activeActionTargets)
         return
       }
 
@@ -296,7 +297,7 @@ export function createHooksRuntime(input: PluginInput, options: CreateHooksRunti
         state.beginIdleDispatch(sessionID, changes)
 
         try {
-          await dispatchHooks(activeHooks, state, input, runBashHook, "session.idle", sessionID, { files, changes }, {}, activeDispatches, activeActionTargets, worktreeDirectoryPromise)
+          await dispatchHooks(activeHooks, state, input, runBashHook, "session.idle", sessionID, { files, changes }, {}, dispatchStates, activeActionTargets)
           state.consumeFileChanges(sessionID, changes)
         } catch (error) {
           state.cancelIdleDispatch(sessionID)
@@ -312,9 +313,8 @@ async function dispatchToolHooks(
   state: SessionStateStore,
   input: PluginInput,
   runBashHook: ExecuteBashHook,
-  activeDispatches: Set<string>,
+  dispatchStates: Map<string, DispatchState>,
   activeActionTargets: Set<string>,
-  worktreeDirectoryPromise: Promise<string>,
   phase: "before" | "after",
   toolName: string,
   sessionID: string,
@@ -329,9 +329,8 @@ async function dispatchToolHooks(
     sessionID,
     context,
     { canBlock: phase === "before" },
-    activeDispatches,
+    dispatchStates,
     activeActionTargets,
-    worktreeDirectoryPromise,
   )
   if (wildcardResult.blocked) {
     return wildcardResult
@@ -347,9 +346,8 @@ async function dispatchToolHooks(
       sessionID,
       context,
       { canBlock: phase === "before" },
-      activeDispatches,
+      dispatchStates,
       activeActionTargets,
-      worktreeDirectoryPromise,
     )
 
     if (result.blocked) {
@@ -369,9 +367,8 @@ async function dispatchHooks(
   sessionID: string,
   context: RuntimeActionContext = {},
   options: { canBlock?: boolean } = {},
-  activeDispatches: Set<string>,
+  dispatchStates: Map<string, DispatchState>,
   activeActionTargets: Set<string>,
-  worktreeDirectoryPromise: Promise<string> = Promise.resolve(input.directory),
 ): Promise<HookExecutionResult> {
   const eventHooks = hooks.get(event)
   if (!eventHooks || eventHooks.length === 0) {
@@ -379,23 +376,33 @@ async function dispatchHooks(
   }
 
   const dispatchKey = `${event}:${sessionID}`
-  if (activeDispatches.has(dispatchKey)) {
+  const dispatchState = dispatchStates.get(dispatchKey)
+  if (dispatchState?.active) {
+    dispatchState.pending = true
     return { blocked: false }
   }
 
-  activeDispatches.add(dispatchKey)
+  const currentState = dispatchState ?? { active: false, pending: false }
+  currentState.active = true
+  dispatchStates.set(dispatchKey, currentState)
 
   try {
-    for (const hook of eventHooks) {
-      const result = await executeHook(hook, state, input, runBashHook, sessionID, context, options, activeActionTargets, worktreeDirectoryPromise)
-      if (result.blocked) {
-        return result
+    do {
+      currentState.pending = false
+
+      for (const hook of eventHooks) {
+        const result = await executeHook(hook, state, input, runBashHook, sessionID, context, options, activeActionTargets)
+        if (result.blocked) {
+          return result
+        }
       }
-    }
+    } while (currentState.pending)
 
     return { blocked: false }
   } finally {
-    activeDispatches.delete(dispatchKey)
+    currentState.active = false
+    currentState.pending = false
+    dispatchStates.delete(dispatchKey)
   }
 }
 
@@ -408,7 +415,6 @@ async function executeHook(
   context: RuntimeActionContext,
   options: { canBlock?: boolean },
   activeActionTargets: Set<string>,
-  worktreeDirectoryPromise: Promise<string>,
 ): Promise<HookExecutionResult> {
   try {
     if (!(await shouldRunHook(hook, state, input, sessionID, context))) {
@@ -431,7 +437,6 @@ async function executeHook(
         context,
         hook.source.filePath,
         activeActionTargets,
-        worktreeDirectoryPromise,
       )
     if (result.blocked && options.canBlock) {
       return result
@@ -474,11 +479,10 @@ async function executeAction(
   context: RuntimeActionContext,
   sourceFilePath: string,
   activeActionTargets: Set<string>,
-  worktreeDirectoryPromise: Promise<string>,
 ): Promise<HookExecutionResult> {
   const targetSessionID = await resolveActionSessionID(state, input, sessionID, runIn)
   const actionContext: RuntimeActionContext = { ...context, sourceSessionID: sessionID, targetSessionID }
-  const executionDirectory = await worktreeDirectoryPromise
+  const executionDirectory = input.directory
 
   if ("command" in action) {
     if (!targetSessionID) {
@@ -600,18 +604,6 @@ function formatHookLoadErrors(errors: Array<{ filePath: string; message: string;
 function formatHookReloadErrors(errors: Array<{ filePath: string; message: string; path?: string }>): string {
   const details = errors.map((error) => `${error.filePath}${error.path ? `#${error.path}` : ""}: ${error.message}`)
   return `[opencode-hooks] Failed to reload hooks.yaml; keeping last known good hooks:\n${details.join("\n")}`
-}
-
-function resolveWorktreeDirectory(directory: string): string {
-  try {
-    return execFileSync("git", ["rev-parse", "--show-toplevel"], {
-      cwd: directory,
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-    }).trim() || directory
-  } catch {
-    return directory
-  }
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
