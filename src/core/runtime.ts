@@ -386,7 +386,7 @@ async function dispatchHooks(
   const dispatchState = dispatchStates.get(dispatchKey) ?? { active: false, pending: [] }
   dispatchStates.set(dispatchKey, dispatchState)
 
-  const result = await new Promise<HookExecutionResult>((resolve, reject) => {
+  const resultPromise = new Promise<HookExecutionResult>((resolve, reject) => {
     dispatchState.pending.push({ context, options, resolve, reject })
   })
 
@@ -405,7 +405,7 @@ async function dispatchHooks(
     })
   }
 
-  return result
+  return await resultPromise
 }
 
 async function processDispatchQueue(
