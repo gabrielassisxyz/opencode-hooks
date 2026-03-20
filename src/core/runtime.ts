@@ -332,9 +332,9 @@ async function executeHook(
 
 async function shouldRunHook(
   hook: HookConfig,
-  state: SessionStateStore,
-  input: PluginInput,
-  sessionID: string,
+  _state: SessionStateStore,
+  _input: PluginInput,
+  _sessionID: string,
   context: RuntimeActionContext,
 ): Promise<boolean> {
   for (const condition of hook.conditions ?? []) {
