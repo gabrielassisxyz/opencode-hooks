@@ -6,8 +6,8 @@ const BASH_TOOL_NAME = "bash" as const
 
 export const MUTATION_TOOL_NAMES = new Set([...DIRECT_MUTATION_TOOL_NAMES, ...PATCH_MUTATION_TOOL_NAMES, BASH_TOOL_NAME])
 
-export type MutationToolName = (typeof DIRECT_MUTATION_TOOL_NAMES)[number] | (typeof PATCH_MUTATION_TOOL_NAMES)[number]
-export type NormalizedMutationToolName = "write" | "edit" | "multiedit" | "apply_patch"
+export type MutationToolName = (typeof DIRECT_MUTATION_TOOL_NAMES)[number] | (typeof PATCH_MUTATION_TOOL_NAMES)[number] | typeof BASH_TOOL_NAME
+export type NormalizedMutationToolName = "write" | "edit" | "multiedit" | "apply_patch" | "bash"
 
 export function normalizeMutationToolName(toolName: string): NormalizedMutationToolName | undefined {
   if ((DIRECT_MUTATION_TOOL_NAMES as readonly string[]).includes(toolName)) {
@@ -16,6 +16,10 @@ export function normalizeMutationToolName(toolName: string): NormalizedMutationT
 
   if ((PATCH_MUTATION_TOOL_NAMES as readonly string[]).includes(toolName)) {
     return "apply_patch"
+  }
+
+  if (toolName === BASH_TOOL_NAME) {
+    return "bash"
   }
 
   return undefined
