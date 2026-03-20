@@ -1,2 +1,8 @@
 # Trekoon
 /.trekoon/
+
+# Build output
+/dist/
+
+# Dependencies
+/node_modules/
