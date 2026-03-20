@@ -338,17 +338,6 @@ async function shouldRunHook(
   context: RuntimeActionContext,
 ): Promise<boolean> {
   for (const condition of hook.conditions ?? []) {
-    if (condition === "isMainSession") {
-      const isMainSession = await state.isMainSession(sessionID, async (targetSessionID) => {
-        const response = await input.client.session.get({ path: { id: targetSessionID } })
-        return pickString(asRecord(response.data)?.parentID) ?? null
-      })
-
-      if (!isMainSession) {
-        return false
-      }
-    }
-
     if (condition === "hasCodeChange") {
       if (!(context.files ?? []).some(hasCodeExtension)) {
         return false
