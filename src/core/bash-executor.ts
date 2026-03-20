@@ -186,17 +186,14 @@ function redactSensitiveContent(value: string): string {
   return value
     .replace(/\b(authorization\s*:\s*bearer\s+)([^\s]+)/gi, `$1${REDACTED}`)
     .replace(
-      /(["']?(?:api[-_ ]?key|token|secret|password|passwd|pwd)["']?[^\S\r\n]*[:=][^\S\r\n]*)("[^"\r\n]*"|'[^'\r\n]*'|[^\s,"'}\]`]+)/gi,
-      (_match, prefix: string, secretValue: string) => `${prefix}${redactSecretValue(secretValue)}`,
+      /((?:\\?["'])?(?:api[-_ ]?key|token|secret|password|passwd|pwd)(?:\\?["'])?[^\S\r\n]*[:=][^\S\r\n]*)(\\?["'])(.*?)(\2)/gi,
+      (_match, prefix: string, openingQuote: string, _secretValue: string, closingQuote: string) =>
+        `${prefix}${openingQuote}${REDACTED}${closingQuote}`,
     )
-}
-
-function redactSecretValue(value: string): string {
-  if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
-    return `${value[0]}${REDACTED}${value[0]}`
-  }
-
-  return REDACTED
+    .replace(
+      /(["']?(?:api[-_ ]?key|token|secret|password|passwd|pwd)["']?[^\S\r\n]*[:=][^\S\r\n]*)([^\s,"'}\]`]+)/gi,
+      `$1${REDACTED}`,
+    )
 }
 
 function resolveExecutionContext(projectDir: string): { worktreeDir: string; gitCommonDir?: string; resolvedFromGit: boolean } {
