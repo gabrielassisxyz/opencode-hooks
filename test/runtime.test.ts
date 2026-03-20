@@ -26,7 +26,7 @@ function createMockPluginInput() {
 }
 
 describe("createHooksRuntime", () => {
-  it("dispatches wildcard then specific tool hooks and reuses pending args by callID", async () => {
+  it("dispatches wildcard then specific tool hooks and prefers after-event args over cached before args", async () => {
     const { input } = createMockPluginInput()
     const bashEvents: Array<{ event: string; toolArgs?: Record<string, unknown> }> = []
     const executeBash = vi.fn(async ({ context }) => {
@@ -62,7 +62,7 @@ describe("createHooksRuntime", () => {
       { args: { filePath: "src/two.ts", value: "two" } },
     )
     await runtime["tool.execute.after"]?.(
-      { tool: "write", sessionID: "session-1", callID: "call-2", args: {} },
+      { tool: "write", sessionID: "session-1", callID: "call-2", args: { filePath: "src/two-final.ts", value: "two-final" } },
       { title: "", output: "", metadata: {} },
     )
 
@@ -74,8 +74,8 @@ describe("createHooksRuntime", () => {
       "tool.after.*",
       "tool.after.write",
     ])
-    expect(bashEvents[bashEvents.length - 2]?.toolArgs).toEqual({ filePath: "src/two.ts", value: "two" })
-    expect(bashEvents[bashEvents.length - 1]?.toolArgs).toEqual({ filePath: "src/two.ts", value: "two" })
+    expect(bashEvents[bashEvents.length - 2]?.toolArgs).toEqual({ filePath: "src/two-final.ts", value: "two-final" })
+    expect(bashEvents[bashEvents.length - 1]?.toolArgs).toEqual({ filePath: "src/two-final.ts", value: "two-final" })
   })
 
   it("tracks modified paths for mutation tools and only runs session.idle hooks when code changed", async () => {
@@ -230,6 +230,64 @@ describe("createHooksRuntime", () => {
     expect(idleContexts).toEqual([["src/write.ts", "src/edit.ts", "src/old.ts", "src/new.ts"]])
   })
 
+  it("retains modified paths when session.idle dispatch fails and clears them after a later success", async () => {
+    const { input } = createMockPluginInput()
+    const idleContexts: Array<readonly string[] | undefined> = []
+    let shouldFailIdle = true
+    const executeBash = vi.fn(async ({ context }) => {
+      if (context.event === "session.idle") {
+        idleContexts.push(context.files)
+        if (shouldFailIdle) {
+          shouldFailIdle = false
+          throw new Error("idle failed")
+        }
+      }
+
+      return {
+        command: "hook",
+        stdout: "",
+        stderr: "",
+        durationMs: 1,
+        exitCode: 0,
+        signal: null,
+        timedOut: false,
+        status: "success" as const,
+        blocking: false,
+      }
+    })
+
+    const hooks: HookMap = new Map([
+      [
+        "session.idle",
+        [
+          {
+            event: "session.idle",
+            conditions: ["hasCodeChange"],
+            actions: [{ bash: "hook" }],
+            source: { filePath: "a", index: 0 },
+          },
+        ],
+      ],
+    ])
+
+    const runtime = createHooksRuntime(input as never, { hooks, executeBash })
+
+    await runtime["tool.execute.before"]?.(
+      { tool: "write", sessionID: "session-1", callID: "call-write" },
+      { args: { filePath: "src/retry.ts", value: "retry" } },
+    )
+    await runtime["tool.execute.after"]?.(
+      { tool: "write", sessionID: "session-1", callID: "call-write", args: {} },
+      { title: "", output: "", metadata: {} },
+    )
+
+    await runtime.event?.({ event: { type: "session.idle", properties: { sessionID: "session-1" } } } as never)
+    await runtime.event?.({ event: { type: "session.idle", properties: { sessionID: "session-1" } } } as never)
+    await runtime.event?.({ event: { type: "session.idle", properties: { sessionID: "session-1" } } } as never)
+
+    expect(idleContexts).toEqual([["src/retry.ts"], ["src/retry.ts"]])
+  })
+
   it("blocks tool.before execution when a hook returns exit code 2", async () => {
     const { input } = createMockPluginInput()
     const executeBash = vi.fn(async ({ context }) => ({
@@ -269,6 +327,65 @@ describe("createHooksRuntime", () => {
       "tool.after.write",
     ])
     expect(executeBash.mock.calls[1]?.[0].context.tool_args).toEqual({})
+  })
+
+  it("does not block tools when command actions or isMainSession lookups fail", async () => {
+    const { input, command, get } = createMockPluginInput()
+    command.mockRejectedValueOnce(new Error("command failed"))
+    get.mockRejectedValueOnce(new Error("lookup failed"))
+
+    const bashEvents: string[] = []
+    const executeBash = vi.fn(async ({ context }) => {
+      bashEvents.push(context.event)
+      return {
+        command: "hook",
+        stdout: "",
+        stderr: "",
+        durationMs: 1,
+        exitCode: 0,
+        signal: null,
+        timedOut: false,
+        status: "success" as const,
+        blocking: false,
+      }
+    })
+
+    const hooks: HookMap = new Map([
+      [
+        "tool.before.*",
+        [
+          {
+            event: "tool.before.*",
+            actions: [{ command: "review-pr" }, { bash: "hook" }],
+            source: { filePath: "a", index: 0 },
+          },
+          {
+            event: "tool.before.*",
+            conditions: ["isMainSession"],
+            actions: [{ bash: "hook" }],
+            source: { filePath: "a", index: 1 },
+          },
+        ],
+      ],
+      [["tool.after.write" as const][0], [{ event: "tool.after.write", actions: [{ bash: "hook" }], source: { filePath: "a", index: 2 } }]],
+    ])
+
+    const runtime = createHooksRuntime(input as never, { hooks, executeBash })
+
+    await expect(
+      runtime["tool.execute.before"]?.(
+        { tool: "write", sessionID: "session-1", callID: "call-1" },
+        { args: { filePath: "src/file.ts", value: "content" } },
+      ),
+    ).resolves.toBeUndefined()
+
+    await runtime["tool.execute.after"]?.(
+      { tool: "write", sessionID: "session-1", callID: "call-1", args: {} },
+      { title: "", output: "", metadata: {} },
+    )
+
+    expect(bashEvents).toEqual(["tool.before.*", "tool.after.write"])
+    expect(get).toHaveBeenCalledWith({ path: { id: "session-1" } })
   })
 
   it("evaluates isMainSession from session state seeded by lifecycle events", async () => {
