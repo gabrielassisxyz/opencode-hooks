@@ -198,7 +198,7 @@ actions:
 
 ### Bash action
 
-Runs a shell command directly without another LLM step.
+Runs a bash command directly without another LLM step.
 
 ```yaml
 actions:
@@ -210,13 +210,15 @@ actions:
 
 If `timeout` is omitted, bash actions use the runtime default of `60000` milliseconds.
 
+`OPENCODE_PROJECT_DIR` remains the action cwd / project directory that triggered the hook. When the directory is inside a git worktree, the runtime also exposes `OPENCODE_WORKTREE_DIR` separately so repo-aware scripts can opt into the worktree root without changing local hook semantics.
+
 ## Bash payloads
 
 Every bash action receives:
 
 - inherited `process.env`
-- `OPENCODE_PROJECT_DIR`
-- `OPENCODE_WORKTREE_DIR`
+- `OPENCODE_PROJECT_DIR` for the action cwd / project directory
+- `OPENCODE_WORKTREE_DIR` for the git worktree root when available
 - `OPENCODE_SESSION_ID`
 - `OPENCODE_GIT_COMMON_DIR` when available
 - JSON over stdin
@@ -256,6 +258,7 @@ Only `tool.before.*` and `tool.before.<name>` hooks can block execution.
 - invalid reloads are rejected and the last known good config stays active
 - `session.idle` clears tracked changes only after successful dispatch
 - if idle dispatch fails, tracked changes are preserved for retry
+- reentrant `file.changed` and `tool.after.*` dispatches are queued and replayed after the active dispatch finishes
 
 ## Copy-paste examples
 
