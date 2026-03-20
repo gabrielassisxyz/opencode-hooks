@@ -10,7 +10,7 @@ interface SessionRecord {
   rootSessionID?: string
   deleted: boolean
   changes: FileChange[]
-  changeKeys: Set<string>
+   changeCounts: Map<string, number>
 }
 
 export type SessionScope = "all" | "main" | "child"
@@ -58,7 +58,7 @@ export class SessionStateStore {
     const record = this.getOrCreateSession(sessionID)
     record.deleted = true
     record.changes = []
-    record.changeKeys.clear()
+    record.changeCounts.clear()
 
     for (const [callID, pending] of this.pendingToolCalls) {
       if (pending.sessionID === sessionID) {
@@ -85,10 +85,11 @@ export class SessionStateStore {
     const record = this.getOrCreateSession(sessionID)
     for (const change of changes) {
       const key = serializeFileChange(change)
-      if (!record.changeKeys.has(key)) {
-        record.changeKeys.add(key)
+      const existingCount = record.changeCounts.get(key) ?? 0
+      if (existingCount === 0) {
         record.changes.push(change)
       }
+      record.changeCounts.set(key, existingCount + 1)
     }
   }
 
@@ -105,20 +106,37 @@ export class SessionStateStore {
     return getChangedPaths(this.getFileChanges(sessionID))
   }
 
-  clearModifiedPaths(sessionID: string): void {
+  consumeFileChanges(sessionID: string, changes: readonly FileChange[]): void {
     const record = this.sessions.get(sessionID)
     if (!record) {
       return
     }
 
-    record.changes = []
-    record.changeKeys.clear()
+    const consumedKeys = new Set<string>()
+
+    for (const change of changes) {
+      const key = serializeFileChange(change)
+      if (consumedKeys.has(key)) {
+        continue
+      }
+
+      consumedKeys.add(key)
+      const remainingCount = (record.changeCounts.get(key) ?? 0) - 1
+      if (remainingCount > 0) {
+        record.changeCounts.set(key, remainingCount)
+        continue
+      }
+
+      record.changeCounts.delete(key)
+    }
+
+    record.changes = record.changes.filter((change) => record.changeCounts.has(serializeFileChange(change)))
   }
 
   private getOrCreateSession(sessionID: string): SessionRecord {
     let record = this.sessions.get(sessionID)
     if (!record) {
-      record = { deleted: false, changes: [], changeKeys: new Set() }
+      record = { deleted: false, changes: [], changeCounts: new Map() }
       this.sessions.set(sessionID, record)
     }
     return record
