@@ -374,7 +374,7 @@ async function shouldRunHook(
         const response = await input.client.session.get({ path: { id: currentSessionID } })
         const data = asRecord(response.data)
         const info = asRecord(data?.info)
-        return pickString(info?.parentID, data?.parentID) ?? null
+        return pickString(info?.parentID) ?? pickString(data?.parentID) ?? null
       })
 
       if (!isMainSession) {
