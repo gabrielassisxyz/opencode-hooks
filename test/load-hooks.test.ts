@@ -12,7 +12,7 @@ describe("parseHooksFile", () => {
       "/repo/.opencode/hook/hooks.yaml",
       `hooks:
   - event: tool.before.*
-    scope: project
+    scope: main
     runIn: main
     conditions: [hasCodeChange]
     actions:
@@ -38,7 +38,7 @@ describe("parseHooksFile", () => {
     const toolHook = result.hooks.get("tool.before.*")?.[0]
     expect(toolHook).toMatchObject({
       event: "tool.before.*",
-      scope: "project",
+      scope: "main",
       runIn: "main",
       conditions: ["hasCodeChange"],
       source: { filePath: "/repo/.opencode/hook/hooks.yaml", index: 0 },
@@ -57,7 +57,7 @@ describe("parseHooksFile", () => {
     actions:
       - command: review-pr
   - event: session.idle
-    conditions: [isMainSession]
+    scope: project
     actions:
       - bash:
           command: npm test
@@ -70,7 +70,7 @@ describe("parseHooksFile", () => {
     expect(Array.from(result.hooks.values()).flat()).toEqual([])
     expect(result.errors).toEqual([
       expect.objectContaining({ code: "invalid_event", path: "hooks[0].event" }),
-      expect.objectContaining({ code: "invalid_conditions", path: "hooks[1].conditions[0]" }),
+      expect.objectContaining({ code: "invalid_scope", path: "hooks[1].scope" }),
       expect.objectContaining({ code: "invalid_action", path: "hooks[1].actions[0].bash" }),
       expect.objectContaining({ code: "invalid_actions", path: "hooks[2].actions" }),
     ])

@@ -441,7 +441,7 @@ describe("createHooksRuntime", () => {
     expect(executeBash.mock.calls[1]?.[0].context.tool_args).toEqual({})
   })
 
-  it("does not block tools when command actions or isMainSession lookups fail", async () => {
+  it("does not block tools when command actions or scope lookups fail", async () => {
     const { input, command, get } = createMockPluginInput()
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
     command.mockRejectedValueOnce(new Error("command failed"))
@@ -472,7 +472,7 @@ describe("createHooksRuntime", () => {
             source: { filePath: "a", index: 0 },
           }),
           createHook("tool.before.*", {
-            conditions: ["isMainSession"],
+            scope: "main",
             actions: [{ bash: "hook" }],
             source: { filePath: "a", index: 1 },
           }),
@@ -500,7 +500,7 @@ describe("createHooksRuntime", () => {
     errorSpy.mockRestore()
   })
 
-  it("evaluates isMainSession from session state seeded by lifecycle events", async () => {
+  it("evaluates main and child scope from the root session state", async () => {
     const { input, get } = createMockPluginInput()
     const triggeredEvents: string[] = []
     const executeBash = vi.fn(async ({ context }) => {
@@ -523,9 +523,14 @@ describe("createHooksRuntime", () => {
         "session.created",
         [
           createHook("session.created", {
-            conditions: ["isMainSession"],
+            scope: "main",
             actions: [{ bash: "hook" }],
             source: { filePath: "a", index: 0 },
+          }),
+          createHook("session.created", {
+            scope: "child",
+            actions: [{ bash: "hook" }],
+            source: { filePath: "a", index: 1 },
           }),
         ],
       ],
@@ -533,9 +538,14 @@ describe("createHooksRuntime", () => {
         "session.deleted",
         [
           createHook("session.deleted", {
-            conditions: ["isMainSession"],
+            scope: "main",
             actions: [{ bash: "hook" }],
-            source: { filePath: "a", index: 1 },
+            source: { filePath: "a", index: 2 },
+          }),
+          createHook("session.deleted", {
+            scope: "child",
+            actions: [{ bash: "hook" }],
+            source: { filePath: "a", index: 3 },
           }),
         ],
       ],
@@ -545,13 +555,114 @@ describe("createHooksRuntime", () => {
 
     await runtime.event?.({ event: { type: "session.created", properties: { info: { id: "main-session" } } } } as never)
     await runtime.event?.({ event: { type: "session.created", properties: { info: { id: "child-session", parentID: "main-session" } } } } as never)
+    await runtime.event?.({ event: { type: "session.created", properties: { info: { id: "grandchild-session", parentID: "child-session" } } } } as never)
     await runtime.event?.({ event: { type: "session.deleted", properties: { info: { id: "main-session" } } } } as never)
     await runtime.event?.({ event: { type: "session.deleted", properties: { info: { id: "child-session" } } } } as never)
+    await runtime.event?.({ event: { type: "session.deleted", properties: { info: { id: "grandchild-session" } } } } as never)
 
     expect(triggeredEvents).toEqual([
       "session.created:main-session",
+      "session.created:child-session",
+      "session.created:grandchild-session",
       "session.deleted:main-session",
+      "session.deleted:child-session",
+      "session.deleted:grandchild-session",
     ])
     expect(get).not.toHaveBeenCalled()
+  })
+
+  it("routes command and tool actions to the root session when runIn is main", async () => {
+    const { input, command, prompt } = createMockPluginInput()
+    const hooks: HookMap = new Map([
+      [
+        "tool.after.write",
+        [
+          createHook("tool.after.write", {
+            runIn: "main",
+            actions: [{ command: { name: "review-pr", args: "--summary" } }, { tool: { name: "bash", args: { command: "pwd" } } }],
+            source: { filePath: "a", index: 0 },
+          }),
+        ],
+      ],
+    ])
+
+    const runtime = createHooksRuntime(input as never, { hooks })
+
+    await runtime.event?.({ event: { type: "session.created", properties: { info: { id: "main-session" } } } } as never)
+    await runtime.event?.({ event: { type: "session.created", properties: { info: { id: "child-session", parentID: "main-session" } } } } as never)
+    await runtime["tool.execute.before"]?.(
+      { tool: "write", sessionID: "child-session", callID: "call-route" },
+      { args: { filePath: "src/file.ts", value: "content" } },
+    )
+    await runtime["tool.execute.after"]?.(
+      { tool: "write", sessionID: "child-session", callID: "call-route", args: {} },
+      { title: "", output: "", metadata: {} },
+    )
+
+    expect(command).toHaveBeenCalledWith({
+      path: { id: "main-session" },
+      body: { command: "review-pr", arguments: "--summary" },
+      query: { directory: "/repo/project" },
+    })
+    expect(prompt).toHaveBeenCalledWith({
+      path: { id: "main-session" },
+      body: {
+        parts: [
+          {
+            type: "text",
+            text: "Use the bash tool with these arguments: {\"command\":\"pwd\"}",
+          },
+        ],
+      },
+      query: { directory: "/repo/project" },
+    })
+  })
+
+  it("skips actions targeting deleted sessions and bounds reentrant main routing", async () => {
+    const { input, command, prompt } = createMockPluginInput()
+    const hooks: HookMap = new Map([
+      [
+        "session.deleted",
+        [
+          createHook("session.deleted", {
+            actions: [{ command: "review-pr" }, { tool: { name: "bash", args: { command: "pwd" } } }],
+            source: { filePath: "a", index: 0 },
+          }),
+          createHook("session.deleted", {
+            runIn: "main",
+            scope: "child",
+            actions: [{ command: "review-pr" }, { tool: { name: "bash", args: { command: "pwd" } } }],
+            source: { filePath: "a", index: 1 },
+          }),
+        ],
+      ],
+    ])
+
+    const runtime = createHooksRuntime(input as never, { hooks })
+
+    await runtime.event?.({ event: { type: "session.created", properties: { info: { id: "main-session" } } } } as never)
+    await runtime.event?.({ event: { type: "session.created", properties: { info: { id: "child-session", parentID: "main-session" } } } } as never)
+    await runtime.event?.({ event: { type: "session.deleted", properties: { info: { id: "main-session" } } } } as never)
+    await runtime.event?.({ event: { type: "session.deleted", properties: { info: { id: "child-session", parentID: "main-session" } } } } as never)
+
+    expect(command).toHaveBeenCalledTimes(1)
+    expect(command).toHaveBeenCalledWith({
+      path: { id: "main-session" },
+      body: { command: "review-pr", arguments: "" },
+      query: { directory: "/repo/project" },
+    })
+    expect(prompt).toHaveBeenCalledTimes(1)
+    expect(prompt).toHaveBeenCalledWith({
+      path: { id: "main-session" },
+      body: {
+        parts: [
+          {
+            type: "text",
+            text: "Use the bash tool with these arguments: {\"command\":\"pwd\"}",
+          },
+        ],
+      },
+      query: { directory: "/repo/project" },
+    })
   })
 })

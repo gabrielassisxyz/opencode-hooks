@@ -6,10 +6,14 @@ export interface PendingToolCall {
 }
 
 interface SessionRecord {
-  isMainSession?: boolean
+  parentID?: string | null
+  rootSessionID?: string
+  deleted: boolean
   changes: FileChange[]
   changeKeys: Set<string>
 }
+
+export type SessionScope = "all" | "main" | "child"
 
 export class SessionStateStore {
   private readonly sessions = new Map<string, SessionRecord>()
@@ -17,24 +21,44 @@ export class SessionStateStore {
 
   rememberSession(sessionID: string, parentID?: string | null): void {
     const record = this.getOrCreateSession(sessionID)
-    record.isMainSession = !parentID
+    record.deleted = false
+
+    if (parentID !== undefined) {
+      record.parentID = parentID
+      record.rootSessionID = parentID ? this.sessions.get(parentID)?.rootSessionID ?? parentID : sessionID
+    }
   }
 
-  async isMainSession(
+  async evaluateScope(
     sessionID: string,
+    scope: SessionScope,
     resolveParentID: (sessionID: string) => Promise<string | null | undefined>,
   ): Promise<boolean> {
-    const record = this.getOrCreateSession(sessionID)
-    if (record.isMainSession !== undefined) {
-      return record.isMainSession
+    if (scope === "all") {
+      return true
     }
 
-    record.isMainSession = !(await resolveParentID(sessionID))
-    return record.isMainSession
+    const rootSessionID = await this.getRootSessionID(sessionID, resolveParentID)
+    const isMainSession = rootSessionID === sessionID
+    return scope === "main" ? isMainSession : !isMainSession
+  }
+
+  async getRootSessionID(
+    sessionID: string,
+    resolveParentID: (sessionID: string) => Promise<string | null | undefined>,
+  ): Promise<string> {
+    return this.resolveRootSessionID(sessionID, resolveParentID, new Set())
+  }
+
+  isDeleted(sessionID: string): boolean {
+    return this.sessions.get(sessionID)?.deleted ?? false
   }
 
   deleteSession(sessionID: string): void {
-    this.sessions.delete(sessionID)
+    const record = this.getOrCreateSession(sessionID)
+    record.deleted = true
+    record.changes = []
+    record.changeKeys.clear()
 
     for (const [callID, pending] of this.pendingToolCalls) {
       if (pending.sessionID === sessionID) {
@@ -94,10 +118,43 @@ export class SessionStateStore {
   private getOrCreateSession(sessionID: string): SessionRecord {
     let record = this.sessions.get(sessionID)
     if (!record) {
-      record = { changes: [], changeKeys: new Set() }
+      record = { deleted: false, changes: [], changeKeys: new Set() }
       this.sessions.set(sessionID, record)
     }
     return record
+  }
+
+  private async resolveRootSessionID(
+    sessionID: string,
+    resolveParentID: (sessionID: string) => Promise<string | null | undefined>,
+    visited: Set<string>,
+  ): Promise<string> {
+    const record = this.getOrCreateSession(sessionID)
+    if (record.rootSessionID) {
+      return record.rootSessionID
+    }
+
+    if (visited.has(sessionID)) {
+      record.rootSessionID = sessionID
+      return sessionID
+    }
+
+    visited.add(sessionID)
+
+    let parentID = record.parentID
+    if (parentID === undefined) {
+      parentID = (await resolveParentID(sessionID)) ?? null
+      record.parentID = parentID
+    }
+
+    if (!parentID) {
+      record.rootSessionID = sessionID
+      return sessionID
+    }
+
+    const rootSessionID = await this.resolveRootSessionID(parentID, resolveParentID, visited)
+    record.rootSessionID = rootSessionID
+    return rootSessionID
   }
 }
 

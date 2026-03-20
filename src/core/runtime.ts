@@ -7,7 +7,7 @@ import type { BashExecutionRequest } from "./bash-types.js"
 import { loadDiscoveredHooks } from "./load-hooks.js"
 import { SessionStateStore } from "./session-state.js"
 import { getChangedPaths, getMutationToolHookNames, getToolFileChanges } from "./tool-paths.js"
-import type { FileChange, HookAction, HookConfig, HookEvent, HookMap } from "./types.js"
+import type { FileChange, HookAction, HookConfig, HookEvent, HookMap, HookRunIn } from "./types.js"
 
 const CODE_EXTENSIONS = new Set([
   ".ts",
@@ -121,6 +121,8 @@ interface RuntimeActionContext {
   readonly changes?: readonly FileChange[]
   readonly toolName?: string
   readonly toolArgs?: Record<string, unknown>
+  readonly sourceSessionID?: string
+  readonly targetSessionID?: string
 }
 
 interface HookExecutionResult {
@@ -144,6 +146,8 @@ export function createHooksRuntime(input: PluginInput, options: CreateHooksRunti
   const hooks = loaded.hooks
   const state = new SessionStateStore()
   const runBashHook = options.executeBash ?? executeBashHook
+  const activeDispatches = new Set<string>()
+  const activeActionTargets = new Set<string>()
 
   return {
     "tool.execute.before": async (eventInput: ToolExecuteBeforeInput, eventOutput: ToolExecuteBeforeOutput): Promise<void> => {
@@ -236,8 +240,9 @@ export function createHooksRuntime(input: PluginInput, options: CreateHooksRunti
           return
         }
 
-        await dispatchHooks(hooks, state, input, runBashHook, "session.deleted", sessionID)
+        state.rememberSession(sessionID, pickString(info?.parentID) ?? undefined)
         state.deleteSession(sessionID)
+        await dispatchHooks(hooks, state, input, runBashHook, "session.deleted", sessionID)
         return
       }
 
@@ -256,7 +261,7 @@ export function createHooksRuntime(input: PluginInput, options: CreateHooksRunti
   }
 }
 
-async function dispatchToolHooks(
+  async function dispatchToolHooks(
   hooks: HookMap,
   state: SessionStateStore,
   input: PluginInput,
@@ -315,14 +320,25 @@ async function dispatchHooks(
     return { blocked: false }
   }
 
-  for (const hook of eventHooks) {
-    const result = await executeHook(hook, state, input, runBashHook, sessionID, context, options)
-    if (result.blocked) {
-      return result
-    }
+  const dispatchKey = `${event}:${sessionID}`
+  if (activeDispatches.has(dispatchKey)) {
+    return { blocked: false }
   }
 
-  return { blocked: false }
+  activeDispatches.add(dispatchKey)
+
+  try {
+    for (const hook of eventHooks) {
+      const result = await executeHook(hook, state, input, runBashHook, sessionID, context, options)
+      if (result.blocked) {
+        return result
+      }
+    }
+
+    return { blocked: false }
+  } finally {
+    activeDispatches.delete(dispatchKey)
+  }
 }
 
 async function executeHook(
@@ -344,7 +360,7 @@ async function executeHook(
   }
 
   for (const action of hook.actions) {
-    const result = await executeAction(action, input, runBashHook, hook.event, sessionID, context, hook.source.filePath)
+    const result = await executeAction(action, hook.runIn, input, state, runBashHook, hook.event, sessionID, context, hook.source.filePath)
     if (result.blocked && options.canBlock) {
       return result
     }
@@ -360,24 +376,13 @@ async function shouldRunHook(
   sessionID: string,
   context: RuntimeActionContext,
 ): Promise<boolean> {
+  if (!(await state.evaluateScope(sessionID, hook.scope, (currentSessionID) => resolveParentSessionID(input, currentSessionID)))) {
+    return false
+  }
+
   for (const condition of hook.conditions ?? []) {
     if (condition === "hasCodeChange") {
       if (!(context.files ?? []).some(hasCodeExtension)) {
-        return false
-      }
-
-      continue
-    }
-
-    if (condition === "isMainSession") {
-      const isMainSession = await state.isMainSession(sessionID, async (currentSessionID) => {
-        const response = await input.client.session.get({ path: { id: currentSessionID } })
-        const data = asRecord(response.data)
-        const info = asRecord(data?.info)
-        return pickString(info?.parentID) ?? pickString(data?.parentID) ?? null
-      })
-
-      if (!isMainSession) {
         return false
       }
     }
@@ -388,18 +393,34 @@ async function shouldRunHook(
 
 async function executeAction(
   action: HookAction,
+  runIn: HookRunIn,
   input: PluginInput,
+  state: SessionStateStore,
   runBashHook: ExecuteBashHook,
   event: HookEvent,
   sessionID: string,
   context: RuntimeActionContext,
   sourceFilePath: string,
 ): Promise<HookExecutionResult> {
+  const targetSessionID = await resolveActionSessionID(state, input, sessionID, runIn)
+  const actionContext: RuntimeActionContext = { ...context, sourceSessionID: sessionID, targetSessionID }
+
   if ("command" in action) {
+    if (!targetSessionID) {
+      return { blocked: false }
+    }
+
+    const actionKey = `${event}:${targetSessionID}:command:${sourceFilePath}:${JSON.stringify(action.command)}`
+    if (activeActionTargets.has(actionKey)) {
+      return { blocked: false }
+    }
+
+    activeActionTargets.add(actionKey)
+
     try {
       const config = typeof action.command === "string" ? { name: action.command, args: "" } : action.command
       await input.client.session.command({
-        path: { id: sessionID },
+        path: { id: targetSessionID },
         body: {
           command: config.name,
           arguments: config.args ?? "",
@@ -408,15 +429,28 @@ async function executeAction(
       })
     } catch (error) {
       logHookFailure(event, sourceFilePath, error)
+    } finally {
+      activeActionTargets.delete(actionKey)
     }
 
     return { blocked: false }
   }
 
   if ("tool" in action) {
+    if (!targetSessionID) {
+      return { blocked: false }
+    }
+
+    const actionKey = `${event}:${targetSessionID}:tool:${sourceFilePath}:${JSON.stringify(action.tool)}`
+    if (activeActionTargets.has(actionKey)) {
+      return { blocked: false }
+    }
+
+    activeActionTargets.add(actionKey)
+
     try {
       await input.client.session.prompt({
-        path: { id: sessionID },
+        path: { id: targetSessionID },
         body: {
           parts: [
             {
@@ -429,6 +463,8 @@ async function executeAction(
       })
     } catch (error) {
       logHookFailure(event, sourceFilePath, error)
+    } finally {
+      activeActionTargets.delete(actionKey)
     }
 
     return { blocked: false }
@@ -443,10 +479,10 @@ async function executeAction(
       session_id: sessionID,
       event,
       cwd: input.directory,
-      files: context.files,
-      changes: context.changes,
-      tool_name: context.toolName,
-      tool_args: context.toolArgs,
+      files: actionContext.files,
+      changes: actionContext.changes,
+      tool_name: actionContext.toolName,
+      tool_args: actionContext.toolArgs,
     },
   })
 
@@ -455,6 +491,25 @@ async function executeAction(
   }
 
   return { blocked: false }
+}
+
+async function resolveActionSessionID(
+  state: SessionStateStore,
+  input: PluginInput,
+  sessionID: string,
+  runIn: HookRunIn,
+): Promise<string | undefined> {
+  const targetSessionID =
+    runIn === "main" ? await state.getRootSessionID(sessionID, (currentSessionID) => resolveParentSessionID(input, currentSessionID)) : sessionID
+
+  return state.isDeleted(targetSessionID) ? undefined : targetSessionID
+}
+
+async function resolveParentSessionID(input: PluginInput, sessionID: string): Promise<string | null> {
+  const response = await input.client.session.get({ path: { id: sessionID } })
+  const data = asRecord(response.data)
+  const info = asRecord(data?.info)
+  return pickString(info?.parentID) ?? pickString(data?.parentID) ?? null
 }
 
 function hasCodeExtension(filePath: string): boolean {

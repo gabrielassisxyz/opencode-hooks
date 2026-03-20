@@ -161,7 +161,7 @@ function parseScope(filePath: string, scope: unknown, index: number): { scope: H
   if (!isHookScope(scope)) {
     return {
       scope: "all",
-      errors: [createError(filePath, "invalid_scope", `hooks[${index}].scope must be one of: all, project.`, `hooks[${index}].scope`)],
+      errors: [createError(filePath, "invalid_scope", `hooks[${index}].scope must be one of: all, main, child.`, `hooks[${index}].scope`)],
     }
   }
 
