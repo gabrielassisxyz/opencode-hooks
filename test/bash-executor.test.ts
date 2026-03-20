@@ -113,9 +113,7 @@ describe("executeBashHook", () => {
     })
 
     const logged = errorSpy.mock.calls[0]?.[0]
-    expect(logged).toContain('\"token\":\"[REDACTED]\"')
-    expect(logged).toContain('\"password\":\"[REDACTED]\"')
-    expect(logged).toContain('password=\\\"[REDACTED]\\\"')
+    expect(logged).toContain('stderr="{\\"token\\":\\"[REDACTED]\\",\\"nested\\":{\\"password\\":\\"[REDACTED]\\"}} password=\\"[REDACTED]\\""')
     expect(logged).not.toContain(token)
     expect(logged).not.toContain(password)
     errorSpy.mockRestore()
