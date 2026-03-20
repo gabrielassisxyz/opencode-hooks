@@ -171,6 +171,30 @@ describe("parseHooksFile", () => {
       expect.objectContaining({ targetId: "base-hook", disable: true }),
     ])
   })
+
+  it("reports invalid override syntax without producing hooks or overrides", () => {
+    const result = parseHooksFile(
+      "/repo/.opencode/hook/hooks.yaml",
+      `hooks:
+  - override: 123
+    event: session.created
+    actions:
+      - command: invalid-target
+  - override: base-hook
+    disable: nope
+    event: session.idle
+    actions:
+      - command: invalid-disable
+`,
+    )
+
+    expect(result.hooks.size).toBe(0)
+    expect(result.overrides).toEqual([])
+    expect(result.errors).toEqual([
+      expect.objectContaining({ code: "invalid_override", path: "hooks[0].override" }),
+      expect.objectContaining({ code: "invalid_override", path: "hooks[1].disable" }),
+    ])
+  })
 })
 
 describe("hook config discovery", () => {
@@ -367,6 +391,51 @@ describe("hook config discovery", () => {
     expect(third.signature).not.toBe(first.signature)
   })
 
+  it("updates snapshot signatures when override files change", () => {
+    const homeDir = "/home/tester"
+    const projectDir = "/repo/project"
+    const globalPath = path.join(homeDir, ".config", "opencode", "hook", "hooks.yaml")
+    const projectPath = path.join(projectDir, ".opencode", "hook", "hooks.yaml")
+    let projectFile = `hooks:
+  - override: base-hook
+    event: session.created
+    actions:
+      - command: replacement-one
+`
+
+    const readSnapshot = () => loadDiscoveredHooksSnapshot({
+      projectDir,
+      homeDir,
+      platform: "linux",
+      exists: (filePath) => filePath === globalPath || filePath === projectPath,
+      readFile: (filePath) => {
+        if (filePath === globalPath) {
+          return `hooks:
+  - id: base-hook
+    event: session.created
+    actions:
+      - command: base
+`
+        }
+
+        return projectFile
+      },
+    })
+
+    const first = readSnapshot()
+    const second = readSnapshot()
+    projectFile = `hooks:
+  - override: base-hook
+    event: session.created
+    actions:
+      - command: replacement-two
+`
+    const third = readSnapshot()
+
+    expect(first.signature).toBe(second.signature)
+    expect(third.signature).not.toBe(first.signature)
+  })
+
   it("returns validation errors when hooks.yaml cannot be read", () => {
     const projectDir = "/repo/project"
     const projectPath = path.join(projectDir, ".opencode", "hook", "hooks.yaml")
@@ -430,6 +499,91 @@ describe("hook config discovery", () => {
     expect(result.hooks.get("session.idle")?.map((hook) => hook.actions[0])).toEqual([
       { command: "project-replacement" },
       { command: "project-appended" },
+    ])
+  })
+
+  it("disables only the targeted hook and leaves unrelated hooks in order", () => {
+    const homeDir = "/home/tester"
+    const projectDir = "/repo/project"
+    const globalPath = path.join(homeDir, ".config", "opencode", "hook", "hooks.yaml")
+    const projectPath = path.join(projectDir, ".opencode", "hook", "hooks.yaml")
+    const files = new Map([
+      [globalPath, `hooks:
+  - id: global-first
+    event: session.idle
+    actions:
+      - command: global-first
+  - id: global-second
+    event: session.idle
+    actions:
+      - command: global-second
+  - id: global-third
+    event: session.idle
+    actions:
+      - command: global-third
+`],
+      [projectPath, `hooks:
+  - override: global-second
+    disable: true
+`],
+    ])
+
+    const result = loadDiscoveredHooks({
+      projectDir,
+      homeDir,
+      platform: "linux",
+      exists: (filePath) => files.has(filePath),
+      readFile: (filePath) => files.get(filePath) ?? "",
+    })
+
+    expect(result.errors).toEqual([])
+    expect(result.hooks.get("session.idle")?.map((hook) => hook.actions[0])).toEqual([
+      { command: "global-first" },
+      { command: "global-third" },
+    ])
+    expect(result.hooks.get("session.idle")?.map((hook) => hook.id)).toEqual(["global-first", "global-third"])
+  })
+
+  it("preserves replacement ids so later overrides can target them", () => {
+    const homeDir = "/home/tester"
+    const projectDir = "/repo/project"
+    const globalPath = path.join(homeDir, ".config", "opencode", "hook", "hooks.yaml")
+    const projectPath = path.join(projectDir, ".opencode", "hook", "hooks.yaml")
+    const files = new Map([
+      [globalPath, `hooks:
+  - id: base-hook
+    event: session.created
+    actions:
+      - command: base
+  - event: session.created
+    actions:
+      - command: untouched
+`],
+      [projectPath, `hooks:
+  - id: replacement-hook
+    override: base-hook
+    event: session.created
+    actions:
+      - command: replacement
+  - override: replacement-hook
+    event: session.created
+    actions:
+      - command: replacement-twice
+`],
+    ])
+
+    const result = loadDiscoveredHooks({
+      projectDir,
+      homeDir,
+      platform: "linux",
+      exists: (filePath) => files.has(filePath),
+      readFile: (filePath) => files.get(filePath) ?? "",
+    })
+
+    expect(result.errors).toEqual([])
+    expect(result.hooks.get("session.created")).toEqual([
+      expect.objectContaining({ id: "replacement-hook", actions: [{ command: "replacement-twice" }] }),
+      expect.objectContaining({ actions: [{ command: "untouched" }] }),
     ])
   })
 
