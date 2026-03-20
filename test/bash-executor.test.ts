@@ -89,6 +89,27 @@ describe("executeBashHook", () => {
       gitCommonDir: expect.any(String),
     })
   })
+
+  it("reports spawn failures as non-blocking failed hooks", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+    const missingDir = path.join(os.tmpdir(), `opencode-hooks-missing-${Date.now()}`)
+
+    const result = await executeBashHook({
+      command: "pwd",
+      context: {
+        ...baseContext,
+        cwd: missingDir,
+      },
+      projectDir: missingDir,
+    })
+
+    expect(result.status).toBe("failed")
+    expect(result.blocking).toBe(false)
+    expect(result.exitCode).toBe(1)
+    expect(result.stderr).toContain("ENOENT")
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("Bash hook failed"))
+    errorSpy.mockRestore()
+  })
 })
 
 describe("mapBashProcessResultToHookResult", () => {
