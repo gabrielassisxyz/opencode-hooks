@@ -12,6 +12,7 @@ import {
 const TIMEOUT_EXIT_CODE = 1
 const BLOCKING_EXIT_CODE = 2
 const KILL_GRACE_PERIOD_MS = 250
+const BASH_EXECUTABLE = process.env.SHELL || "/bin/bash"
 
 export async function executeBashHook(request: BashExecutionRequest): Promise<BashHookResult> {
   const processResult = await executeBashProcess(request)
@@ -55,7 +56,7 @@ async function executeBashProcess(request: BashExecutionRequest): Promise<BashPr
       ...(executionContext.gitCommonDir ? { OPENCODE_GIT_COMMON_DIR: executionContext.gitCommonDir } : {}),
     }
 
-    const child = spawn("bash", ["-c", request.command], {
+    const child = spawn(BASH_EXECUTABLE, ["-c", request.command], {
       cwd: executionContext.worktreeDir,
       env,
       stdio: ["pipe", "pipe", "pipe"],
