@@ -966,6 +966,43 @@ describe("createHooksRuntime", () => {
     expect(get).not.toHaveBeenCalled()
   })
 
+  it("re-resolves the true root session when descendants are seen before parents", async () => {
+    const { input, command } = createMockPluginInput()
+    const hooks: HookMap = new Map([
+      [
+        "tool.after.write",
+        [
+          createHook("tool.after.write", {
+            scope: "child",
+            runIn: "main",
+            actions: [{ command: { name: "review-pr", args: "--out-of-order" } }],
+            source: { filePath: "a", index: 0 },
+          }),
+        ],
+      ],
+    ])
+
+    const runtime = createHooksRuntime(input as never, { hooks })
+
+    await runtime.event?.({ event: { type: "session.created", properties: { info: { id: "grandchild-session", parentID: "child-session" } } } } as never)
+    await runtime.event?.({ event: { type: "session.created", properties: { info: { id: "child-session", parentID: "main-session" } } } } as never)
+    await runtime.event?.({ event: { type: "session.created", properties: { info: { id: "main-session" } } } } as never)
+    await runtime["tool.execute.before"]?.(
+      { tool: "write", sessionID: "grandchild-session", callID: "call-out-of-order-root" },
+      { args: { filePath: "src/file.ts", value: "content" } },
+    )
+    await runtime["tool.execute.after"]?.(
+      { tool: "write", sessionID: "grandchild-session", callID: "call-out-of-order-root", args: {} },
+      { title: "", output: "", metadata: {} },
+    )
+
+    expect(command).toHaveBeenCalledWith({
+      path: { id: "main-session" },
+      body: { command: "review-pr", arguments: "--out-of-order" },
+      query: { directory: "/repo/project" },
+    })
+  })
+
   it("routes command and tool actions to the root session when runIn is main", async () => {
     const { input, command, prompt } = createMockPluginInput()
     const hooks: HookMap = new Map([
@@ -1011,6 +1048,73 @@ describe("createHooksRuntime", () => {
       },
       query: { directory: "/repo/project" },
     })
+  })
+
+  it("allows parallel runIn main command and tool actions without skipping independent dispatches", async () => {
+    const { input, command, prompt } = createMockPluginInput()
+    let releaseActions: (() => void) | undefined
+    const actionsReleased = new Promise<void>((resolve) => {
+      releaseActions = resolve
+    })
+
+    command.mockImplementation(async () => {
+      await actionsReleased
+      return { data: {}, response: { status: 200 } }
+    })
+    prompt.mockImplementation(async () => {
+      await actionsReleased
+      return { data: {}, response: { status: 200 } }
+    })
+
+    const hooks: HookMap = new Map([
+      [
+        "tool.after.write",
+        [
+          createHook("tool.after.write", {
+            runIn: "main",
+            actions: [{ command: { name: "review-pr", args: "--parallel" } }, { tool: { name: "bash", args: { command: "pwd" } } }],
+            source: { filePath: "a", index: 0 },
+          }),
+        ],
+      ],
+    ])
+
+    const runtime = createHooksRuntime(input as never, { hooks })
+
+    await runtime.event?.({ event: { type: "session.created", properties: { info: { id: "main-session" } } } } as never)
+    await runtime.event?.({ event: { type: "session.created", properties: { info: { id: "child-a", parentID: "main-session" } } } } as never)
+    await runtime.event?.({ event: { type: "session.created", properties: { info: { id: "child-b", parentID: "main-session" } } } } as never)
+
+    await Promise.all([
+      runtime["tool.execute.before"]?.(
+        { tool: "write", sessionID: "child-a", callID: "call-parallel-a" },
+        { args: { filePath: "src/a.ts", value: "a" } },
+      ),
+      runtime["tool.execute.before"]?.(
+        { tool: "write", sessionID: "child-b", callID: "call-parallel-b" },
+        { args: { filePath: "src/b.ts", value: "b" } },
+      ),
+    ])
+
+    const afterPromises = [
+      runtime["tool.execute.after"]?.(
+        { tool: "write", sessionID: "child-a", callID: "call-parallel-a", args: {} },
+        { title: "", output: "", metadata: {} },
+      ),
+      runtime["tool.execute.after"]?.(
+        { tool: "write", sessionID: "child-b", callID: "call-parallel-b", args: {} },
+        { title: "", output: "", metadata: {} },
+      ),
+    ]
+
+    await Promise.resolve()
+    releaseActions?.()
+    await Promise.all(afterPromises)
+
+    expect(command).toHaveBeenCalledTimes(2)
+    expect(prompt).toHaveBeenCalledTimes(2)
+    expect(command.mock.calls.map(([request]) => request.path.id)).toEqual(["main-session", "main-session"])
+    expect(prompt.mock.calls.map(([request]) => request.path.id)).toEqual(["main-session", "main-session"])
   })
 
   it("keeps current-session routing for command and tool actions when runIn is omitted", async () => {
