@@ -8,17 +8,17 @@ import {
   type HookCommandActionConfig,
   type HookCondition,
   type HookConfig,
+  type HookRunIn,
+  type HookScope,
   type HookMap,
   type HookToolActionConfig,
   type HookValidationError,
   isHookCondition,
   isHookEvent,
+  isHookRunIn,
+  isHookScope,
 } from "./types.js"
 import { discoverHookConfigPaths, type HookConfigDiscoveryOptions } from "./config-paths.js"
-
-interface HooksFrontmatter {
-  hooks?: unknown
-}
 
 export interface HookDiscoveryResult {
   readonly hooks: HookMap
@@ -31,27 +31,37 @@ export interface HookLoadOptions extends HookConfigDiscoveryOptions {
 }
 
 export function parseHooksFile(filePath: string, content: string): HookDiscoveryResult {
-  const frontmatter = parseFrontmatter<HooksFrontmatter>(content)
-  if (frontmatter.error) {
+  const document = YAML.parseDocument(content)
+  if (document.errors.length > 0) {
     return {
       hooks: new Map(),
-      errors: [{ code: "invalid_frontmatter", filePath, message: frontmatter.error }],
+      errors: [{ code: "invalid_frontmatter", filePath, message: document.errors[0]?.message ?? "Failed to parse hooks.yaml." }],
       files: [filePath],
     }
   }
 
-  if (!Object.prototype.hasOwnProperty.call(frontmatter.data, "hooks")) {
+  const parsed = document.toJS()
+
+  if (!isRecord(parsed)) {
     return {
       hooks: new Map(),
-      errors: [{ code: "missing_hooks", filePath, message: "hooks.md frontmatter must define a hooks list." }],
+      errors: [{ code: "invalid_frontmatter", filePath, message: "hooks.yaml must parse to an object." }],
       files: [filePath],
     }
   }
 
-  if (!Array.isArray(frontmatter.data.hooks)) {
+  if (!Object.prototype.hasOwnProperty.call(parsed, "hooks")) {
     return {
       hooks: new Map(),
-      errors: [{ code: "invalid_hooks", filePath, message: "hooks frontmatter value must be an array." }],
+      errors: [{ code: "missing_hooks", filePath, message: "hooks.yaml must define a hooks list.", path: "hooks" }],
+      files: [filePath],
+    }
+  }
+
+  if (!Array.isArray(parsed.hooks)) {
+    return {
+      hooks: new Map(),
+      errors: [{ code: "invalid_hooks", filePath, message: "hooks must be an array.", path: "hooks" }],
       files: [filePath],
     }
   }
@@ -59,7 +69,7 @@ export function parseHooksFile(filePath: string, content: string): HookDiscovery
   const hooks = new Map<HookConfig["event"], HookConfig[]>()
   const errors: HookValidationError[] = []
 
-  frontmatter.data.hooks.forEach((hookDefinition, index) => {
+  parsed.hooks.forEach((hookDefinition, index) => {
     const parsedHook = parseHookDefinition(filePath, hookDefinition, index)
     errors.push(...parsedHook.errors)
     if (!parsedHook.hook) {
@@ -105,23 +115,6 @@ function mergeHookMapsInto(target: HookMap, source: HookMap): void {
   }
 }
 
-function parseFrontmatter<T>(content: string): { data: T; error?: string } {
-  const match = content.match(/^---\r?\n([\s\S]*?)(?:\r?\n)?---(?:\r?\n|$)/)
-  if (!match) {
-    return { data: {} as T, error: "hooks.md must start with YAML frontmatter delimited by --- markers." }
-  }
-
-  try {
-    const data = YAML.parse(match[1])
-    if (data === null || data === undefined || typeof data !== "object" || Array.isArray(data)) {
-      return { data: {} as T, error: "hooks.md frontmatter must parse to an object." }
-    }
-    return { data: data as T }
-  } catch (error) {
-    return { data: {} as T, error: error instanceof Error ? error.message : "Failed to parse YAML frontmatter." }
-  }
-}
-
 function parseHookDefinition(
   filePath: string,
   hookDefinition: unknown,
@@ -136,9 +129,12 @@ function parseHookDefinition(
     return { errors: [createError(filePath, "invalid_event", `hooks[${index}].event is not a supported hook event.`, `hooks[${index}].event`)] }
   }
 
+  const scopeResult = parseScope(filePath, hookDefinition.scope, index)
+  const runInResult = parseRunIn(filePath, hookDefinition.runIn, index)
+
   const conditionsResult = parseConditions(filePath, hookDefinition.conditions, index)
   const actionsResult = parseActions(filePath, hookDefinition.actions, index)
-  const errors = [...conditionsResult.errors, ...actionsResult.errors]
+  const errors = [...scopeResult.errors, ...runInResult.errors, ...conditionsResult.errors, ...actionsResult.errors]
 
   if (errors.length > 0 || actionsResult.actions.length === 0) {
     return { errors }
@@ -148,11 +144,43 @@ function parseHookDefinition(
     hook: {
       event,
       actions: actionsResult.actions,
+      scope: scopeResult.scope,
+      runIn: runInResult.runIn,
       ...(conditionsResult.conditions ? { conditions: conditionsResult.conditions } : {}),
       source: { filePath, index },
     },
     errors,
   }
+}
+
+function parseScope(filePath: string, scope: unknown, index: number): { scope: HookScope; errors: HookValidationError[] } {
+  if (scope === undefined) {
+    return { scope: "all", errors: [] }
+  }
+
+  if (!isHookScope(scope)) {
+    return {
+      scope: "all",
+      errors: [createError(filePath, "invalid_scope", `hooks[${index}].scope must be one of: all, project.`, `hooks[${index}].scope`)],
+    }
+  }
+
+  return { scope, errors: [] }
+}
+
+function parseRunIn(filePath: string, runIn: unknown, index: number): { runIn: HookRunIn; errors: HookValidationError[] } {
+  if (runIn === undefined) {
+    return { runIn: "current", errors: [] }
+  }
+
+  if (!isHookRunIn(runIn)) {
+    return {
+      runIn: "current",
+      errors: [createError(filePath, "invalid_run_in", `hooks[${index}].runIn must be one of: current, main.`, `hooks[${index}].runIn`)],
+    }
+  }
+
+  return { runIn, errors: [] }
 }
 
 function parseConditions(
@@ -170,10 +198,10 @@ function parseConditions(
     }
   }
 
-  const invalid = conditions.filter((condition) => !isHookCondition(condition))
-  if (invalid.length > 0) {
+  const invalidIndex = conditions.findIndex((condition) => !isHookCondition(condition))
+  if (invalidIndex >= 0) {
     return {
-      errors: [createError(filePath, "invalid_conditions", `hooks[${index}].conditions contains unsupported values.`, `hooks[${index}].conditions`)],
+      errors: [createError(filePath, "invalid_conditions", `hooks[${index}].conditions[${invalidIndex}] is not a supported condition.`, `hooks[${index}].conditions[${invalidIndex}]`)],
     }
   }
 
