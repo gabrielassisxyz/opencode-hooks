@@ -283,15 +283,7 @@ async function executeHook(
   }
 
   for (const action of hook.actions) {
-    let result: HookExecutionResult
-
-    try {
-      result = await executeAction(action, input, runBashHook, hook.event, sessionID, context)
-    } catch (error) {
-      logHookFailure(hook.event, hook.source.filePath, error)
-      continue
-    }
-
+    const result = await executeAction(action, input, runBashHook, hook.event, sessionID, context, hook.source.filePath)
     if (result.blocked && options.canBlock) {
       return result
     }
@@ -336,33 +328,44 @@ async function executeAction(
   event: HookEvent,
   sessionID: string,
   context: RuntimeActionContext,
+  sourceFilePath: string,
 ): Promise<HookExecutionResult> {
   if ("command" in action) {
-    const config = typeof action.command === "string" ? { name: action.command, args: "" } : action.command
-    await input.client.session.command({
-      path: { id: sessionID },
-      body: {
-        command: config.name,
-        arguments: config.args ?? "",
-      },
-      query: { directory: input.directory },
-    })
+    try {
+      const config = typeof action.command === "string" ? { name: action.command, args: "" } : action.command
+      await input.client.session.command({
+        path: { id: sessionID },
+        body: {
+          command: config.name,
+          arguments: config.args ?? "",
+        },
+        query: { directory: input.directory },
+      })
+    } catch (error) {
+      logHookFailure(event, sourceFilePath, error)
+    }
+
     return { blocked: false }
   }
 
   if ("tool" in action) {
-    await input.client.session.prompt({
-      path: { id: sessionID },
-      body: {
-        parts: [
-          {
-            type: "text",
-            text: `Use the ${action.tool.name} tool with these arguments: ${JSON.stringify(action.tool.args ?? {})}`,
-          },
-        ],
-      },
-      query: { directory: input.directory },
-    })
+    try {
+      await input.client.session.prompt({
+        path: { id: sessionID },
+        body: {
+          parts: [
+            {
+              type: "text",
+              text: `Use the ${action.tool.name} tool with these arguments: ${JSON.stringify(action.tool.args ?? {})}`,
+            },
+          ],
+        },
+        query: { directory: input.directory },
+      })
+    } catch (error) {
+      logHookFailure(event, sourceFilePath, error)
+    }
+
     return { blocked: false }
   }
 
