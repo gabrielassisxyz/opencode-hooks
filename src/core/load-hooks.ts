@@ -30,6 +30,10 @@ export interface HookLoadOptions extends HookConfigDiscoveryOptions {
   readonly readFile?: (filePath: string) => string
 }
 
+export interface HookLoadSnapshot extends HookDiscoveryResult {
+  readonly signature: string
+}
+
 export function parseHooksFile(filePath: string, content: string): HookDiscoveryResult {
   const document = YAML.parseDocument(content)
   if (document.errors.length > 0) {
@@ -84,11 +88,40 @@ export function parseHooksFile(filePath: string, content: string): HookDiscovery
 }
 
 export function loadHooksFile(filePath: string, readFile: (filePath: string) => string = defaultReadFile): HookDiscoveryResult {
-  return parseHooksFile(filePath, readFile(filePath))
+  try {
+    return parseHooksFile(filePath, readFile(filePath))
+  } catch (error) {
+    return {
+      hooks: new Map(),
+      errors: [{ code: "invalid_frontmatter", filePath, message: formatHookReadError(error) }],
+      files: [filePath],
+    }
+  }
 }
 
 export function loadDiscoveredHooks(options: HookLoadOptions = {}): HookDiscoveryResult {
   const files = discoverHookConfigPaths(options)
+  return loadDiscoveredHooksFromFiles(files, options)
+}
+
+export function loadDiscoveredHooksSnapshot(options: HookLoadOptions = {}): HookLoadSnapshot {
+  const files = discoverHookConfigPaths(options)
+  const readFile = options.readFile ?? defaultReadFile
+  const signatureParts = files.map((filePath) => {
+    try {
+      return [filePath, readFile(filePath)] as const
+    } catch (error) {
+      return [filePath, `__read_error__:${formatHookReadError(error)}`] as const
+    }
+  })
+
+  return {
+    ...loadDiscoveredHooksFromFiles(files, options),
+    signature: JSON.stringify(signatureParts),
+  }
+}
+
+function loadDiscoveredHooksFromFiles(files: string[], options: HookLoadOptions): HookDiscoveryResult {
   const hooks = new Map<HookConfig["event"], HookConfig[]>()
   const errors: HookValidationError[] = []
 
@@ -333,6 +366,11 @@ function createError(filePath: string, code: HookValidationError["code"], messag
 
 function defaultReadFile(filePath: string): string {
   return readFileSync(filePath, "utf8")
+}
+
+function formatHookReadError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error)
+  return `Failed to read hooks.yaml: ${message}`
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
