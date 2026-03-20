@@ -1,3 +1,7 @@
+import { mkdirSync, writeFileSync } from "node:fs"
+import os from "node:os"
+import path from "node:path"
+
 import { describe, expect, it, vi } from "vitest"
 
 import { createHooksRuntime } from "../src/core/runtime.ts"
@@ -403,6 +407,72 @@ describe("createHooksRuntime", () => {
     errorSpy.mockRestore()
   })
 
+  it("retains changes added while session.idle hooks are still dispatching", async () => {
+    const { input } = createMockPluginInput()
+    const idleContexts: Array<readonly string[] | undefined> = []
+    let runtime: ReturnType<typeof createHooksRuntime>
+    let injectedChange = false
+
+    const executeBash = vi.fn(async ({ context }) => {
+      if (context.event === "session.idle") {
+        idleContexts.push(context.files)
+
+        if (!injectedChange) {
+          injectedChange = true
+          await runtime["tool.execute.before"]?.(
+            { tool: "write", sessionID: "session-1", callID: "call-during-idle" },
+            { args: { filePath: "src/during-idle.ts", value: "during idle" } },
+          )
+          await runtime["tool.execute.after"]?.(
+            { tool: "write", sessionID: "session-1", callID: "call-during-idle", args: {} },
+            { title: "", output: "", metadata: {} },
+          )
+        }
+      }
+
+      return {
+        command: "hook",
+        stdout: "",
+        stderr: "",
+        durationMs: 1,
+        exitCode: 0,
+        signal: null,
+        timedOut: false,
+        status: "success" as const,
+        blocking: false,
+      }
+    })
+
+    const hooks: HookMap = new Map([
+      [
+        "session.idle",
+        [
+          createHook("session.idle", {
+            conditions: ["hasCodeChange"],
+            actions: [{ bash: "hook" }],
+            source: { filePath: "a", index: 0 },
+          }),
+        ],
+      ],
+    ])
+
+    runtime = createHooksRuntime(input as never, { hooks, executeBash })
+
+    await runtime["tool.execute.before"]?.(
+      { tool: "write", sessionID: "session-1", callID: "call-initial" },
+      { args: { filePath: "src/initial.ts", value: "initial" } },
+    )
+    await runtime["tool.execute.after"]?.(
+      { tool: "write", sessionID: "session-1", callID: "call-initial", args: {} },
+      { title: "", output: "", metadata: {} },
+    )
+
+    await runtime.event?.({ event: { type: "session.idle", properties: { sessionID: "session-1" } } } as never)
+    await runtime.event?.({ event: { type: "session.idle", properties: { sessionID: "session-1" } } } as never)
+
+    expect(idleContexts).toEqual([["src/initial.ts"], ["src/during-idle.ts"]])
+  })
+
   it("blocks tool.before execution when a hook returns exit code 2", async () => {
     const { input } = createMockPluginInput()
     const executeBash = vi.fn(async ({ context }) => ({
@@ -666,6 +736,93 @@ describe("createHooksRuntime", () => {
         ],
       },
       query: { directory: "/repo/project" },
+    })
+  })
+
+  it("continues with valid discovered hooks when hooks.yaml contains invalid entries", async () => {
+    const projectDir = path.join(os.tmpdir(), `opencode-hooks-${Date.now()}-${Math.random().toString(16).slice(2)}`)
+    mkdirSync(path.join(projectDir, ".opencode", "hook"), { recursive: true })
+    writeFileSync(
+      path.join(projectDir, ".opencode", "hook", "hooks.yaml"),
+      `hooks:
+  - event: nope
+    actions:
+      - bash: invalid
+  - event: session.created
+    actions:
+      - bash: hook
+`,
+      "utf8",
+    )
+
+    const { input } = createMockPluginInput()
+    const executeBash = vi.fn(async () => ({
+      command: "hook",
+      stdout: "",
+      stderr: "",
+      durationMs: 1,
+      exitCode: 0,
+      signal: null,
+      timedOut: false,
+      status: "success" as const,
+      blocking: false,
+    }))
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+
+    const runtime = createHooksRuntime({ ...(input as object), directory: projectDir } as never, { executeBash })
+
+    await runtime.event?.({ event: { type: "session.created", properties: { info: { id: "session-1" } } } } as never)
+
+    expect(executeBash).toHaveBeenCalledTimes(1)
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("continuing with valid hooks"))
+    errorSpy.mockRestore()
+  })
+
+  it("uses the worktree root for runIn main command and tool actions", async () => {
+    const { input, command, prompt } = createMockPluginInput()
+    const directory = path.join(process.cwd(), "src", "core")
+    const hooks: HookMap = new Map([
+      [
+        "tool.after.write",
+        [
+          createHook("tool.after.write", {
+            runIn: "main",
+            actions: [{ command: { name: "review-pr", args: "--summary" } }, { tool: { name: "bash", args: { command: "pwd" } } }],
+            source: { filePath: "a", index: 0 },
+          }),
+        ],
+      ],
+    ])
+
+    const runtime = createHooksRuntime({ ...(input as object), directory } as never, { hooks })
+
+    await runtime.event?.({ event: { type: "session.created", properties: { info: { id: "main-session" } } } } as never)
+    await runtime.event?.({ event: { type: "session.created", properties: { info: { id: "child-session", parentID: "main-session" } } } } as never)
+    await runtime["tool.execute.before"]?.(
+      { tool: "write", sessionID: "child-session", callID: "call-route" },
+      { args: { filePath: "src/file.ts", value: "content" } },
+    )
+    await runtime["tool.execute.after"]?.(
+      { tool: "write", sessionID: "child-session", callID: "call-route", args: {} },
+      { title: "", output: "", metadata: {} },
+    )
+
+    expect(command).toHaveBeenCalledWith({
+      path: { id: "main-session" },
+      body: { command: "review-pr", arguments: "--summary" },
+      query: { directory: process.cwd() },
+    })
+    expect(prompt).toHaveBeenCalledWith({
+      path: { id: "main-session" },
+      body: {
+        parts: [
+          {
+            type: "text",
+            text: "Use the bash tool with these arguments: {\"command\":\"pwd\"}",
+          },
+        ],
+      },
+      query: { directory: process.cwd() },
     })
   })
 })
