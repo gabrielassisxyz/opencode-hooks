@@ -68,6 +68,7 @@ interface ToolExecuteAfterInput {
   readonly tool: string
   readonly sessionID?: string
   readonly callID: string
+  readonly args?: Record<string, unknown>
 }
 
 interface RuntimeEventEnvelope {
