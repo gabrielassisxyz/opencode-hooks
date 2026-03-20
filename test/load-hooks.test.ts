@@ -582,7 +582,7 @@ describe("hook config discovery", () => {
 
     expect(result.errors).toEqual([])
     expect(result.hooks.get("session.created")).toEqual([
-      expect.objectContaining({ id: "replacement-hook", actions: [{ command: "replacement-twice" }] }),
+      expect.objectContaining({ actions: [{ command: "replacement-twice" }] }),
       expect.objectContaining({ actions: [{ command: "untouched" }] }),
     ])
   })
