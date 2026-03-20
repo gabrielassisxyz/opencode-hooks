@@ -667,6 +667,60 @@ describe("createHooksRuntime", () => {
     ])
   })
 
+  it("replays repeated reentrant file.changed events even when payloads are identical", async () => {
+    const { input } = createMockPluginInput()
+    const observedFiles: Array<readonly string[] | undefined> = []
+    let runtime: ReturnType<typeof createHooksRuntime>
+    let replayCount = 0
+
+    const executeBash = vi.fn(async ({ context }) => {
+      if (context.event === "file.changed") {
+        observedFiles.push(context.files)
+
+        if (replayCount < 2) {
+          replayCount += 1
+          await runtime["tool.execute.before"]?.(
+            { tool: "write", sessionID: "session-1", callID: `call-repeat-${replayCount}` },
+            { args: { filePath: "src/repeated.ts", value: "same" } },
+          )
+          await runtime["tool.execute.after"]?.(
+            { tool: "write", sessionID: "session-1", callID: `call-repeat-${replayCount}`, args: {} },
+            { title: "", output: "", metadata: {} },
+          )
+        }
+      }
+
+      return {
+        command: "hook",
+        stdout: "",
+        stderr: "",
+        durationMs: 1,
+        exitCode: 0,
+        signal: null,
+        timedOut: false,
+        status: "success" as const,
+        blocking: false,
+      }
+    })
+
+    const hooks: HookMap = new Map([
+      [["file.changed" as const][0], [createHook("file.changed", { actions: [{ bash: "hook" }], source: { filePath: "a", index: 0 } })]],
+    ])
+
+    runtime = createHooksRuntime(input as never, { hooks, executeBash })
+
+    await runtime["tool.execute.before"]?.(
+      { tool: "write", sessionID: "session-1", callID: "call-initial-repeat" },
+      { args: { filePath: "src/repeated.ts", value: "same" } },
+    )
+    await runtime["tool.execute.after"]?.(
+      { tool: "write", sessionID: "session-1", callID: "call-initial-repeat", args: {} },
+      { title: "", output: "", metadata: {} },
+    )
+
+    expect(observedFiles).toEqual([["src/repeated.ts"], ["src/repeated.ts"], ["src/repeated.ts"]])
+  })
+
   it("blocks tool.before execution when a hook returns exit code 2", async () => {
     const { input } = createMockPluginInput()
     const executeBash = vi.fn(async ({ context }) => ({

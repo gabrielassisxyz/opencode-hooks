@@ -100,6 +100,26 @@ describe("executeBashHook", () => {
     errorSpy.mockRestore()
   })
 
+  it("redacts quoted and JSON-style secrets in bash failure logs", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+    const token = "json-token-secret"
+    const password = "quoted-password-secret"
+
+    await executeBashHook({
+      command: `printf '{"token":"${token}","nested":{"password" : "${password}"},"apiKey"='"'"'${token}'"'"'}' >&2; exit 1`,
+      context: baseContext,
+      projectDir: "/repo/project",
+    })
+
+    const logged = errorSpy.mock.calls[0]?.[0]
+    expect(logged).toContain('"token":"[REDACTED]"')
+    expect(logged).toContain('"password" : [REDACTED]')
+    expect(logged).toContain('"apiKey"=[REDACTED]')
+    expect(logged).not.toContain(token)
+    expect(logged).not.toContain(password)
+    errorSpy.mockRestore()
+  })
+
   it("uses worktree-aware env for git repositories", async () => {
     const repoDir = process.cwd()
     const projectDir = path.join(repoDir, "src")
