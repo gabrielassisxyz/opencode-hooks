@@ -105,12 +105,13 @@ export function parseHooksFile(filePath: string, content: string): ParsedHooksFi
   return { hooks, overrides, errors, files: [filePath] }
 }
 
-export function loadHooksFile(filePath: string, readFile: (filePath: string) => string = defaultReadFile): HookDiscoveryResult {
+export function loadHooksFile(filePath: string, readFile: (filePath: string) => string = defaultReadFile): ParsedHooksFileResult {
   try {
     return parseHooksFile(filePath, readFile(filePath))
   } catch (error) {
     return {
       hooks: new Map(),
+      overrides: [],
       errors: [{ code: "invalid_frontmatter", filePath, message: formatHookReadError(error) }],
       files: [filePath],
     }
@@ -186,7 +187,7 @@ function parseHookDefinition(
   if (overrideResult.isDisableOverride) {
     return {
       override: {
-        targetId: overrideResult.targetId,
+        targetId: overrideResult.targetId!,
         disable: true,
         source: { filePath, index },
       },
