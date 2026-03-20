@@ -26,18 +26,16 @@ You can also place the plugin directory directly in a standard plugin discovery 
 
 The plugin entrypoint is `src/index.ts`, which exports the OpenCode `Plugin` implementation via `src/adapter/opencode.ts` and wires the runtime created by `createHooksRuntime(...)`.
 
-## What v1 does
+## Recommended documentation path
 
-The runtime:
+Read these in order:
 
-- discovers hook configs from standard OpenCode hook locations
-- parses `hooks.yaml`
-- validates supported events, conditions, and action shapes
-- dispatches hooks for session lifecycle events and tool lifecycle events
-- lets `tool.before.*` hooks block a tool when a bash action exits with code `2`
-- tracks files modified through `write`, `edit`, `multiedit`, and `apply_patch`
+1. [`docs/hooks-v2-reference.md`](docs/hooks-v2-reference.md) for the current public config shape
+2. [`docs/migration-to-hooks-yaml.md`](docs/migration-to-hooks-yaml.md) if you are moving from `hooks.md` or `isMainSession`
+3. [`docs/implementation-status.md`](docs/implementation-status.md) for branch-accurate implementation notes, status, and known limitations
+4. [`examples/hooks.yaml`](examples/hooks.yaml) for copy-pasteable patterns
 
-## Hook config locations
+## Current config locations
 
 Hooks are merged from global and project locations.
 
@@ -46,39 +44,49 @@ Hooks are merged from global and project locations.
 | macOS / Linux | `~/.config/opencode/hook/hooks.yaml` | `<project>/.opencode/hook/hooks.yaml` |
 | Windows | `~/.config/opencode/hook/hooks.yaml` preferred, otherwise `%APPDATA%/opencode/hook/hooks.yaml` | `<project>/.opencode/hook/hooks.yaml` |
 
-Windows paths are supported for config discovery, but bash actions still require a working `bash` runtime on the machine where OpenCode loads the plugin.
+Important migration note: this branch loads `hooks.yaml`, not `hooks.md`.
 
-Behavior:
+## Recommended operator defaults
 
-- global hooks load first
-- project hooks load second
-- matching hooks are combined, not overridden
-- only existing files are loaded
+Unless you need something more specific:
 
-## hooks.yaml format
+- prefer `file.changed` for file-oriented automation
+- leave `scope` unset unless you need `main` or `child`
+- leave `runIn` unset unless you need actions to execute in the root session
+- treat `tool.after.*` and `tool.after.<name>` as advanced hooks for observability or non-file workflows
 
-Each config file must define a top-level `hooks` array.
+Explicit defaults in the current runtime:
+
+- `scope` defaults to `all`
+- `runIn` defaults to `current`
+- `conditions` are optional
+- bash `timeout` defaults to `60000` milliseconds
+
+## Minimal `hooks.yaml`
+
+Create one of:
+
+- `~/.config/opencode/hook/hooks.yaml`
+- `<project>/.opencode/hook/hooks.yaml`
 
 ```yaml
 hooks:
-  - event: session.idle
-    scope: main
+  - event: file.changed
     conditions: [hasCodeChange]
     actions:
-      - bash: "npm run lint --fix"
-      - command: simplify-changes
+      - bash: "npm test"
 ```
 
-### hooks.yaml schema
+## Schema overview
 
 ```yaml
 hooks:
   - event: <hook-event>
     scope: <all|main|child>   # optional, defaults to all
     runIn: <current|main>     # optional, defaults to current
-    conditions:            # optional
+    conditions:               # optional
       - hasCodeChange
-    actions:               # required, non-empty
+    actions:                  # required, non-empty
       - command: <string>
       - command:
           name: <string>
@@ -111,6 +119,7 @@ Validation rules enforced by the runtime:
 | `session.created` | When OpenCode creates a session |
 | `session.deleted` | When OpenCode deletes a session |
 | `session.idle` | When a session becomes idle |
+| `file.changed` | After a supported mutation tool reports file changes |
 
 ### Tool events
 
@@ -120,49 +129,36 @@ Validation rules enforced by the runtime:
 | `tool.before.<name>` | Before a specific tool, such as `tool.before.write` |
 | `tool.after.*` | Advanced: after every tool execution |
 | `tool.after.<name>` | Advanced: after a specific tool, such as `tool.after.edit` |
-| `file.changed` | After a mutation tool reports file changes |
 
 Tool hook order for a tool named `write`:
 
 1. `tool.before.*`
 2. `tool.before.write`
 3. tool executes
-4. `tool.after.*`
-5. `tool.after.write`
+4. `file.changed` if the tool changed tracked files
+5. `tool.after.*`
+6. `tool.after.write`
 
-### What tool names can I use?
+## Public API versus advanced hooks
 
-`tool.before.<name>` and `tool.after.<name>` match the actual OpenCode tool name emitted at runtime.
+### Preferred public API: `file.changed`
 
-Examples:
+Use `file.changed` when your automation depends on changed files.
 
-- `tool.before.write` runs before the `write` tool
-- `tool.after.edit` runs after the `edit` tool
-- `tool.before.multiedit` runs before the `multiedit` tool
-- `tool.after.apply_patch` runs after the `apply_patch` tool
+Why it is preferred:
 
-Wildcard hooks are the catch-all option:
+- it only fires for supported mutation tools: `write`, `edit`, `multiedit`, `patch`, and `apply_patch`
+- it includes `files` and structured `changes` metadata
+- it avoids catch-all after-hook ambiguity
+- it is the recommended path for linting, formatting, indexing, and atomic commit workflows
 
-- `tool.before.*` runs before every tool
-- `tool.after.*` runs after every tool
+### Advanced escape hatches: `tool.after.*` and `tool.after.<name>`
 
-Common built-in tool names in OpenCode include tools such as:
+Keep using low-level tool hooks only when you need:
 
-| Category | Common tool names |
-|---|---|
-| File and shell work | `bash`, `read`, `write`, `edit`, `grep`, `glob`, `list` |
-| Planning and workflow | `question`, `task`, `skill`, `todowrite`, `todoread` |
-| Search and web | `webfetch`, `websearch`, `codesearch` |
-| Patch and code intelligence | `patch`, `lsp` |
-| Common file-mutation names seen by this plugin | `write`, `edit`, `multiedit`, `apply_patch` |
-
-Important caveats:
-
-- the exact available tool set can vary by OpenCode version, enabled experimental features, providers, custom tools, and MCP servers
-- some environments expose tool names that differ slightly from the built-in docs, such as `apply_patch`
-- if you want file automation, prefer `file.changed` over `tool.after.*` so the hook only receives explicit file-change payloads
-- treat `tool.after.*` and `tool.after.<name>` as advanced escape hatches for non-file workflows or tool-level observability
-- if you want a hook for one specific tool, use the exact emitted tool name, such as `write`, `edit`, `multiedit`, or `apply_patch`
+- observability for every tool call, including non-file tools
+- tool-specific post-processing unrelated to changed files
+- compatibility with workflows that truly depend on raw tool arguments instead of normalized file changes
 
 ## Conditions
 
@@ -172,21 +168,13 @@ All configured conditions must pass for a hook to run.
 |---|---|
 | `hasCodeChange` | Run only when tracked modified files include at least one supported code extension |
 
-Use `scope: main` when you want a hook to run only for the root session, or `scope: child` when you only want child-session events.
-
-Use `runIn: main` when an action should execute in the root session even if a child session triggered the event. This is useful for commands such as `review-pr` that should stay attached to the main conversation.
-
-Extensions treated as code by `hasCodeChange`:
-
-`ts`, `tsx`, `mts`, `cts`, `js`, `jsx`, `mjs`, `cjs`, `json`, `jsonc`, `json5`, `yml`, `yaml`, `toml`, `xml`, `ini`, `cfg`, `conf`, `properties`, `css`, `scss`, `sass`, `less`, `html`, `vue`, `svelte`, `astro`, `mdx`, `graphql`, `gql`, `proto`, `sql`, `prisma`, `go`, `rs`, `zig`, `c`, `h`, `cpp`, `cc`, `cxx`, `hpp`, `java`, `groovy`, `gradle`, `py`, `rb`, `php`, `sh`, `bash`, `zsh`, `fish`, `ps1`, `psm1`, `psd1`, `bat`, `cmd`, `kt`, `kts`, `swift`, `m`, `mm`, `cs`, `fs`, `scala`, `clj`, `hs`, `lua`, `dart`, `elm`, `ex`, `exs`, `erl`, `hrl`, `nim`, `nix`, `r`, `rkt`, `tf`, `tfvars`.
-
-Matching is extension-based in v1, so extensionless filenames such as `Dockerfile` are not currently treated as code by `hasCodeChange`.
+`hasCodeChange` is extension-based on this branch. Extensionless files such as `Dockerfile` do not currently count as code changes.
 
 ## Actions
 
 ### Command action
 
-Runs an OpenCode command in the same session.
+Runs an OpenCode command in the same session, unless `runIn: main` redirects it to the root session.
 
 ```yaml
 actions:
@@ -222,47 +210,18 @@ actions:
 
 If `timeout` is omitted, bash actions use the runtime default of `60000` milliseconds.
 
-## Bash contract
+## Bash payloads
 
-For bash actions, the runtime inherits the current process environment, adds `OPENCODE_*` variables, and passes JSON over stdin.
+Every bash action receives:
 
-### Environment variables
+- inherited `process.env`
+- `OPENCODE_PROJECT_DIR`
+- `OPENCODE_WORKTREE_DIR`
+- `OPENCODE_SESSION_ID`
+- `OPENCODE_GIT_COMMON_DIR` when available
+- JSON over stdin
 
-| Variable | Value |
-|---|---|
-| `OPENCODE_PROJECT_DIR` | Absolute project path |
-| `OPENCODE_SESSION_ID` | Current OpenCode session id |
-
-All existing `process.env` variables remain available to the bash process unless your shell or parent process overrides them.
-
-### Stdin JSON
-
-Every bash action receives JSON like:
-
-```json
-{
-  "session_id": "abc123",
-  "event": "session.idle",
-  "cwd": "/path/to/project",
-  "files": ["src/index.ts"]
-}
-```
-
-For tool hooks, the runtime also sends tool context:
-
-```json
-{
-  "session_id": "abc123",
-  "event": "tool.before.write",
-  "cwd": "/path/to/project",
-  "tool_name": "write",
-  "tool_args": {
-    "filePath": "src/index.ts"
-  }
-}
-```
-
-For `file.changed`, bash actions also receive structured change metadata:
+Example `file.changed` payload:
 
 ```json
 {
@@ -281,175 +240,50 @@ For `file.changed`, bash actions also receive structured change metadata:
 }
 ```
 
-### Exit code semantics
+## Blocking behavior
 
-| Exit code | Meaning |
-|---|---|
-| `0` | Success |
-| `2` | Blocking failure only for `tool.before.*` and `tool.before.<name>` bash hooks |
-| anything else | Non-blocking failure; later actions still run |
+Only `tool.before.*` and `tool.before.<name>` hooks can block execution.
 
-## Blocking semantics
+- a bash action that exits with `2` blocks the tool
+- `tool.after.*`, `tool.after.<name>`, `file.changed`, and session hooks do not block execution
+- non-blocking failures are logged and later actions continue
 
-Only `tool.before.*` and `tool.before.<name>` hooks can block tool execution.
-
-- a bash action that exits with `2` marks the hook result as blocking
-- the runtime stops remaining actions for that hook chain
-- the tool call throws with the bash stderr text, or `Blocked by hook` if stderr is empty
-- `tool.after.*`, `tool.after.<name>`, and session hooks do not block execution
-
-## Execution behavior
+## Execution behavior on this branch
 
 - hooks for the same event run in declaration order
-- global hooks are appended before project hooks for the same event
-- the runtime re-reads discovered `hooks.yaml` files at the start of each hook entrypoint (`tool.execute.before`, `tool.execute.after`, and runtime `event` handling), so a saved config edit is picked up on the next runtime event without restarting the plugin
-- reloads are deterministic: the runtime only switches to a new config after the full discovered config set parses and validates successfully
-- if a new `hooks.yaml` edit is invalid, the runtime logs the validation error and keeps running the last known good hook set instead of disabling hooks
-- once the config is fixed and saved, the next runtime event activates the new hook set automatically
-- command action failures, tool action failures, and scope lookup failures are logged and do not block tool execution
-- action failures are logged and later actions continue unless a blocking `tool.before` bash action exits with `2`
-- `session.idle` only sees files tracked from OpenCode mutation tools in the current session
-- after successful `session.idle` dispatch completes, that session's tracked modified-file list is cleared
-- if `session.idle` dispatch throws before completion, tracked paths are preserved for retry on the next idle event
+- global hooks load before project hooks
+- the runtime reloads discovered `hooks.yaml` files at each hook entrypoint
+- invalid reloads are rejected and the last known good config stays active
+- `session.idle` clears tracked changes only after successful dispatch
+- if idle dispatch fails, tracked changes are preserved for retry
 
-Example: block writes to secret files.
+## Copy-paste examples
 
-```yaml
-hooks:
-  - event: tool.before.write
-    actions:
-      - bash: |
-          file=$(cat | jq -r '.tool_args.filePath // .tool_args.file_path // .tool_args.path')
-          if echo "$file" | grep -qE '\.(env|pem|key)$'; then
-            echo "Cannot modify sensitive files: $file" >&2
-            exit 2
-          fi
-```
+See [`examples/hooks.yaml`](examples/hooks.yaml) for:
 
-## Modified file tracking
+- main-session only examples
+- child-to-main `runIn: main` routing
+- recommended `file.changed` automation
+- advanced `tool.after.*` observability
+- conservative atomic commit wiring
 
-The runtime records changed paths per session so `session.idle` hooks can react to what was edited.
+## Known limitations
 
-Tracked mutation tools:
+- only `hooks.yaml` is discovered; `hooks.md` is a migration target, not a supported input
+- file tracking is limited to supported OpenCode mutation tools, not arbitrary filesystem changes
+- `hasCodeChange` is extension-based and ignores extensionless code-like files
+- tool hooks depend on actual emitted OpenCode tool names
+- Windows discovery is supported, but bash actions still require a working shell runtime
 
-- `write`
-- `edit`
-- `multiedit`
-- `apply_patch`
+## Explicit non-goals for v1/v2 runtime scope
 
-Behavior details:
+This package does **not** currently try to:
 
-- `write`, `edit`, and `multiedit` track a single file path from args such as `filePath`
-- `apply_patch` parses `*** Add File`, `*** Update File`, and `*** Delete File` headers from the patch text
-- paths are stored per session until the next successful `session.idle`
-- when `session.idle` fires, the runtime passes the accumulated `files` array to hook actions and clears that list only after dispatch succeeds
-- `hasCodeChange` checks those tracked paths, so docs-only edits like `README.md` will not satisfy the condition
-
-## Examples
-
-See [`examples/hooks.yaml`](examples/hooks.yaml) for a copy-pasteable operator guide that covers the recommended `file.changed` flow, clear `scope` and `runIn` examples, and advanced `tool.after.*` usage.
-
-### Minimal project-local file
-
-Create `<project>/.opencode/hook/hooks.yaml`:
-
-```yaml
-hooks:
-  - event: session.idle
-    conditions: [hasCodeChange]
-    actions:
-      - bash: "npm test"
-```
-
-### Review-on-session-start
-
-```yaml
-hooks:
-  - event: session.created
-    scope: main
-    actions:
-      - command:
-          name: review-pr
-          args: "main feature"
-```
-
-### Prefer `file.changed` for file automation
-
-```yaml
-hooks:
-  - event: file.changed
-    scope: main
-    conditions: [hasCodeChange]
-    actions:
-      - bash:
-          command: "npm run lint -- --fix"
-          timeout: 30000
-      - bash: "$HOME/.config/opencode/hook/atomic-commit.sh"
-```
-
-This is the recommended public API for file-oriented automation because the runtime passes the exact changed paths and structured `changes` metadata. It avoids the ambiguity of catch-all `tool.after.*` hooks.
-
-### `scope` and `runIn` together
-
-```yaml
-hooks:
-  - event: file.changed
-    scope: all
-    runIn: main
-    actions:
-      - command:
-          name: review-pr
-          args: "main feature"
-```
-
-- `scope: all` means both main and child sessions can trigger the hook.
-- `runIn: main` means the follow-up command runs in the root session.
-
-### Advanced: observe every tool after execution
-
-```yaml
-hooks:
-  - event: tool.after.*
-    actions:
-      - bash: |
-          context=$(cat)
-          echo "advanced after hook for $(echo "$context" | jq -r '.tool_name')"
-```
-
-Use this only when you truly need tool-level observability. For automations tied to changed files, prefer `file.changed` instead.
-
-### Atomic commit sample safety notes
-
-The bundled [`examples/atomic-commit.sh`](examples/atomic-commit.sh) sample is intentionally conservative:
-
-- it is meant to run from `file.changed`, not a catch-all `tool.after.*` hook
-- it stages only the paths reported in the hook payload
-- it respects normal git hooks and does not use `git commit --no-verify`
-- if a commit fails, the script logs the failure so you can inspect the staged diff manually
-
-### Manual review checklist for supported events
-
-This README includes examples or event references for every supported event:
-
-- `session.created`
-- `session.deleted`
-- `session.idle`
-- `file.changed`
-- `tool.before.*`
-- `tool.before.<name>`
-- `tool.after.*`
-- `tool.after.<name>`
-
-## Explicit non-goals for v1
-
-This package intentionally does **not** try to do the following in v1:
-
-- define custom hook events beyond session and tool lifecycle events
-- support config inheritance, overrides, or priority rules beyond global-then-project merging
-- provide per-hook retries, concurrency controls, or scheduling
+- define custom hook events beyond session, file, and tool lifecycle events
+- provide config inheritance or override priority beyond global-then-project merging
+- provide retries, scheduling, or concurrency controls per hook
 - track arbitrary filesystem changes outside OpenCode mutation tools
-- treat non-bash actions as blocking; only `tool.before` bash hooks can block
-- add a separate plugin-specific config file beyond standard `hooks.yaml` locations
+- make command or tool actions blocking
 
 ## Development
 

@@ -2,6 +2,17 @@
 # Copy the parts you want into either:
 # - ~/.config/opencode/hook/hooks.yaml
 # - <project>/.opencode/hook/hooks.yaml
+#
+# Current defaults in the runtime:
+# - scope defaults to all
+# - runIn defaults to current
+# - conditions are optional
+# - bash timeout defaults to 60000ms
+#
+# Migration notes:
+# - use hooks.yaml, not hooks.md
+# - use scope/runIn, not isMainSession
+# - prefer file.changed for file automation
 
 hooks:
   # Scope controls which session emits the event.
@@ -35,6 +46,13 @@ hooks:
     conditions: [hasCodeChange]
     actions:
       - bash: "npm test"
+
+  # Minimal example showing that scope and runIn can be omitted.
+  # This uses the defaults scope=all and runIn=current.
+  - event: file.changed
+    conditions: [hasCodeChange]
+    actions:
+      - bash: "npm run typecheck"
 
   - event: tool.before.*
     actions:
