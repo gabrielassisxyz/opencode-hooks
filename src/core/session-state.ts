@@ -27,7 +27,7 @@ export class SessionStateStore {
 
     if (parentID !== undefined) {
       record.parentID = parentID
-      record.rootSessionID = parentID ? this.sessions.get(parentID)?.rootSessionID ?? parentID : sessionID
+      record.rootSessionID = parentID ? this.sessions.get(parentID)?.rootSessionID : sessionID
     }
   }
 
@@ -174,10 +174,6 @@ export class SessionStateStore {
     visited: Set<string>,
   ): Promise<string> {
     const record = this.getOrCreateSession(sessionID)
-    if (record.rootSessionID) {
-      return record.rootSessionID
-    }
-
     if (visited.has(sessionID)) {
       record.rootSessionID = sessionID
       return sessionID
@@ -194,6 +190,13 @@ export class SessionStateStore {
     if (!parentID) {
       record.rootSessionID = sessionID
       return sessionID
+    }
+
+    if (record.rootSessionID) {
+      const parentRootSessionID = this.sessions.get(parentID)?.rootSessionID
+      if (parentRootSessionID && parentRootSessionID === record.rootSessionID) {
+        return record.rootSessionID
+      }
     }
 
     const rootSessionID = await this.resolveRootSessionID(parentID, resolveParentID, visited)
