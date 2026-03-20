@@ -1,3 +1,5 @@
+import type { FileChange } from "./types.js"
+
 export const DEFAULT_BASH_TIMEOUT = 60_000
 
 export interface BashHookContext {
@@ -5,6 +7,7 @@ export interface BashHookContext {
   readonly event: string
   readonly cwd: string
   readonly files?: readonly string[]
+  readonly changes?: readonly FileChange[]
   readonly tool_name?: string
   readonly tool_args?: Record<string, unknown>
 }
