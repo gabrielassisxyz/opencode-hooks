@@ -202,7 +202,7 @@ export function createHooksRuntime(input: PluginInput, options: CreateHooksRunti
           changes,
           toolName: eventInput.tool,
           toolArgs,
-        }, {}, activeDispatches, activeActionTargets)
+        }, {}, activeDispatches, activeActionTargets, worktreeDirectoryPromise)
       }
 
       await dispatchToolHooks(
@@ -235,7 +235,7 @@ export function createHooksRuntime(input: PluginInput, options: CreateHooksRunti
         }
 
         state.rememberSession(sessionID, pickString(info?.parentID) ?? null)
-        await dispatchHooks(hooks, state, input, runBashHook, "session.created", sessionID, {}, {}, activeDispatches, activeActionTargets)
+        await dispatchHooks(hooks, state, input, runBashHook, "session.created", sessionID, {}, {}, activeDispatches, activeActionTargets, worktreeDirectoryPromise)
         return
       }
 
@@ -248,7 +248,7 @@ export function createHooksRuntime(input: PluginInput, options: CreateHooksRunti
         
         state.rememberSession(sessionID, pickString(info?.parentID) ?? undefined)
         state.deleteSession(sessionID)
-        await dispatchHooks(hooks, state, input, runBashHook, "session.deleted", sessionID, {}, {}, activeDispatches, activeActionTargets)
+        await dispatchHooks(hooks, state, input, runBashHook, "session.deleted", sessionID, {}, {}, activeDispatches, activeActionTargets, worktreeDirectoryPromise)
         return
       }
 
@@ -260,7 +260,7 @@ export function createHooksRuntime(input: PluginInput, options: CreateHooksRunti
 
         const changes = state.getFileChanges(sessionID)
         const files = state.getModifiedPaths(sessionID)
-        await dispatchHooks(hooks, state, input, runBashHook, "session.idle", sessionID, { files, changes }, {}, activeDispatches, activeActionTargets)
+        await dispatchHooks(hooks, state, input, runBashHook, "session.idle", sessionID, { files, changes }, {}, activeDispatches, activeActionTargets, worktreeDirectoryPromise)
         state.consumeFileChanges(sessionID, changes)
       }
     },
