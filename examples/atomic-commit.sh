@@ -245,7 +245,7 @@ for key in ("filePath", "file_path", "path"):
         break'
 }
 
-extract_apply_patch_paths() {
+extract_patch_tool_paths() {
   python3 -c 'import json, sys
 payload = json.load(sys.stdin)
 tool_args = payload.get("tool_args") or {}
@@ -473,8 +473,8 @@ else:
     exit 0
   fi
 
-  if [[ "$tool_name" == "apply_patch" ]]; then
-    patch_paths="$(printf '%s' "$input_json" | extract_apply_patch_paths)"
+  if [[ "$tool_name" == "apply_patch" || "$tool_name" == "patch" ]]; then
+    patch_paths="$(printf '%s' "$input_json" | extract_patch_tool_paths)"
     if [[ -z "$patch_paths" ]]; then
       release_lock
       exit 0
