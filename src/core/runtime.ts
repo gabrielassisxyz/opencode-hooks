@@ -132,7 +132,15 @@ interface HookExecutionResult {
 
 interface DispatchState {
   active: boolean
-  pending: boolean
+  currentSignature?: string
+  pending: DispatchRequest[]
+  pendingSignatures: Set<string>
+}
+
+interface DispatchRequest {
+  readonly context: RuntimeActionContext
+  readonly options: { canBlock?: boolean }
+  readonly signature: string
 }
 
 type ExecuteBashHook = (request: BashExecutionRequest) => ReturnType<typeof executeBashHook>
@@ -378,30 +386,45 @@ async function dispatchHooks(
   const dispatchKey = `${event}:${sessionID}`
   const dispatchState = dispatchStates.get(dispatchKey)
   if (dispatchState?.active) {
-    dispatchState.pending = true
+    const signature = serializeDispatchRequest(context, options)
+    if (signature !== dispatchState.currentSignature && !dispatchState.pendingSignatures.has(signature)) {
+      dispatchState.pending.push({ context, options, signature })
+      dispatchState.pendingSignatures.add(signature)
+    }
     return { blocked: false }
   }
 
-  const currentState = dispatchState ?? { active: false, pending: false }
+  const currentState = dispatchState ?? { active: false, pending: [], pendingSignatures: new Set<string>() }
   currentState.active = true
   dispatchStates.set(dispatchKey, currentState)
 
   try {
-    do {
-      currentState.pending = false
+    const queue: DispatchRequest[] = [{ context, options, signature: serializeDispatchRequest(context, options) }]
+
+    while (queue.length > 0) {
+      const request = queue.shift()!
+      currentState.currentSignature = request.signature
 
       for (const hook of eventHooks) {
-        const result = await executeHook(hook, state, input, runBashHook, sessionID, context, options, activeActionTargets)
+        const result = await executeHook(hook, state, input, runBashHook, sessionID, request.context, request.options, activeActionTargets)
         if (result.blocked) {
           return result
         }
       }
-    } while (currentState.pending)
+
+      if (currentState.pending.length > 0) {
+        queue.push(...currentState.pending)
+        currentState.pending = []
+        currentState.pendingSignatures.clear()
+      }
+    }
 
     return { blocked: false }
   } finally {
     currentState.active = false
-    currentState.pending = false
+    currentState.currentSignature = undefined
+    currentState.pending = []
+    currentState.pendingSignatures.clear()
     dispatchStates.delete(dispatchKey)
   }
 }
@@ -623,6 +646,10 @@ function resolveToolArgs(
   }
 
   return pendingArgs ?? eventArgs ?? {}
+}
+
+function serializeDispatchRequest(context: RuntimeActionContext, options: { canBlock?: boolean }): string {
+  return JSON.stringify({ context, canBlock: options.canBlock ?? false })
 }
 
 function logHookFailure(event: HookEvent, filePath: string, error: unknown): void {
