@@ -69,11 +69,19 @@ export interface HookConfigSource {
 }
 
 export interface HookConfig {
+  readonly id?: string
   readonly event: HookEvent
   readonly actions: HookAction[]
   readonly scope: HookScope
   readonly runIn: HookRunIn
   readonly conditions?: HookCondition[]
+  readonly source: HookConfigSource
+}
+
+export interface HookOverrideEntry {
+  readonly targetId: string
+  readonly disable: boolean
+  readonly replacement?: HookConfig
   readonly source: HookConfigSource
 }
 
@@ -90,6 +98,9 @@ export type HookValidationErrorCode =
   | "invalid_conditions"
   | "invalid_actions"
   | "invalid_action"
+  | "duplicate_hook_id"
+  | "override_target_not_found"
+  | "invalid_override"
 
 export interface HookValidationError {
   readonly code: HookValidationErrorCode
@@ -100,6 +111,7 @@ export interface HookValidationError {
 
 export interface ParsedHooksFile {
   readonly hooks: HookMap
+  readonly overrides: HookOverrideEntry[]
   readonly errors: HookValidationError[]
 }
 
