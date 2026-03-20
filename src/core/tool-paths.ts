@@ -35,6 +35,10 @@ export function getMutationToolHookNames(toolName: string): string[] {
     return ["patch", "apply_patch"]
   }
 
+  if (normalized === "bash") {
+    return ["bash"]
+  }
+
   return [normalized]
 }
 

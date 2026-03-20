@@ -95,23 +95,21 @@ hooks:
     actions:
       - bash: "$HOME/.config/opencode/hook/atomic-commit.sh"
 
-  # Overrides live in the same top-level hooks list and target an earlier file's id.
-  # Put override entries in the project hooks file when you want to customize a
-  # global hook without editing the global configuration.
-
-  # Replacement override example.
-  - override: lint-and-review-on-change
-    event: file.changed
-    scope: main
-    conditions: [hasCodeChange]
-    actions:
-      - bash:
-          command: "pnpm lint --fix"
-          timeout: 30000
-      - command:
-          name: review-pr
-          args: "main docs"
-
-  # Disable override example.
-  - override: atomic-commit-on-change
-    disable: true
+# Override examples belong in a later file, such as <project>/.opencode/hook/hooks.yaml,
+# so they can target ids that were already loaded from an earlier global file.
+#
+# hooks:
+#   - override: lint-and-review-on-change
+#     event: file.changed
+#     scope: main
+#     conditions: [hasCodeChange]
+#     actions:
+#       - bash:
+#           command: "pnpm lint --fix"
+#           timeout: 30000
+#       - command:
+#           name: review-pr
+#           args: "main docs"
+#
+#   - override: atomic-commit-on-change
+#     disable: true
