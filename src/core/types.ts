@@ -1,11 +1,15 @@
 export const SESSION_HOOK_EVENTS = ["session.idle", "session.created", "session.deleted"] as const
-export const HOOK_CONDITIONS = ["isMainSession", "hasCodeChange"] as const
+export const HOOK_CONDITIONS = ["hasCodeChange"] as const
+export const HOOK_SCOPES = ["all", "project"] as const
+export const HOOK_RUN_IN = ["current", "main"] as const
 
 export type SessionHookEvent = (typeof SESSION_HOOK_EVENTS)[number]
 export type ToolHookPhase = "before" | "after"
 export type ToolHookEvent = `tool.${ToolHookPhase}.*` | `tool.${ToolHookPhase}.${string}`
 export type HookEvent = SessionHookEvent | ToolHookEvent
 export type HookCondition = (typeof HOOK_CONDITIONS)[number]
+export type HookScope = (typeof HOOK_SCOPES)[number]
+export type HookRunIn = (typeof HOOK_RUN_IN)[number]
 
 export interface HookCommandActionConfig {
   readonly name: string
@@ -44,6 +48,8 @@ export interface HookConfigSource {
 export interface HookConfig {
   readonly event: HookEvent
   readonly actions: HookAction[]
+  readonly scope: HookScope
+  readonly runIn: HookRunIn
   readonly conditions?: HookCondition[]
   readonly source: HookConfigSource
 }
@@ -56,6 +62,8 @@ export type HookValidationErrorCode =
   | "invalid_hooks"
   | "invalid_hook"
   | "invalid_event"
+  | "invalid_scope"
+  | "invalid_run_in"
   | "invalid_conditions"
   | "invalid_actions"
   | "invalid_action"
@@ -78,4 +86,12 @@ export function isHookEvent(value: unknown): value is HookEvent {
 
 export function isHookCondition(value: unknown): value is HookCondition {
   return typeof value === "string" && HOOK_CONDITIONS.includes(value as HookCondition)
+}
+
+export function isHookScope(value: unknown): value is HookScope {
+  return typeof value === "string" && HOOK_SCOPES.includes(value as HookScope)
+}
+
+export function isHookRunIn(value: unknown): value is HookRunIn {
+  return typeof value === "string" && HOOK_RUN_IN.includes(value as HookRunIn)
 }
