@@ -436,6 +436,36 @@ describe("hook config discovery", () => {
     expect(third.signature).not.toBe(first.signature)
   })
 
+  it("uses one coherent read per discovered file when building snapshots", () => {
+    const projectDir = "/repo/project"
+    const projectPath = path.join(projectDir, ".opencode", "hook", "hooks.yaml")
+    let readCount = 0
+
+    const result = loadDiscoveredHooksSnapshot({
+      projectDir,
+      exists: (filePath) => filePath === projectPath,
+      readFile: () => {
+        readCount += 1
+        return readCount === 1
+          ? `hooks:
+  - event: session.created
+    actions:
+      - command: first
+`
+          : `hooks:
+  - event: session.created
+    actions:
+      - command: second
+`
+      },
+    })
+
+    expect(readCount).toBe(1)
+    expect(result.signature).toContain("first")
+    expect(result.signature).not.toContain("second")
+    expect(result.hooks.get("session.created")?.map((hook) => hook.actions[0])).toEqual([{ command: "first" }])
+  })
+
   it("returns validation errors when hooks.yaml cannot be read", () => {
     const projectDir = "/repo/project"
     const projectPath = path.join(projectDir, ".opencode", "hook", "hooks.yaml")
