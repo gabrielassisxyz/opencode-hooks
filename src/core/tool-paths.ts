@@ -142,3 +142,119 @@ function parsePatchChanges(patchText: string): FileChange[] {
   flushPendingModify()
   return changes
 }
+
+function parseBashChanges(command: string): FileChange[] {
+  const changes: FileChange[] = []
+
+  for (const segment of splitBashCommands(command)) {
+    const tokens = shellTokenize(segment)
+    if (tokens.length === 0) {
+      continue
+    }
+
+    const cmd = tokens[0]
+
+    if (cmd === "rm" || cmd === "git" && tokens[1] === "rm") {
+      const paths = extractPathArgs(tokens, cmd === "git" ? 2 : 1)
+      for (const p of paths) {
+        changes.push({ operation: "delete", path: p })
+      }
+      continue
+    }
+
+    if (cmd === "mv" || cmd === "git" && tokens[1] === "mv") {
+      const paths = extractPathArgs(tokens, cmd === "git" ? 2 : 1)
+      if (paths.length >= 2) {
+        const dest = paths[paths.length - 1]
+        for (const src of paths.slice(0, -1)) {
+          changes.push({ operation: "rename", fromPath: src, toPath: dest })
+        }
+      }
+      continue
+    }
+
+    if (cmd === "cp" || cmd === "git" && tokens[1] === "cp") {
+      const paths = extractPathArgs(tokens, cmd === "git" ? 2 : 1)
+      if (paths.length >= 2) {
+        changes.push({ operation: "create", path: paths[paths.length - 1] })
+      }
+      continue
+    }
+
+    if (cmd === "touch" || cmd === "mkdir") {
+      const paths = extractPathArgs(tokens, 1)
+      for (const p of paths) {
+        changes.push({ operation: "create", path: p })
+      }
+    }
+  }
+
+  return changes
+}
+
+function splitBashCommands(command: string): string[] {
+  return command.split(/\s*(?:&&|\|\||;)\s*/)
+}
+
+function shellTokenize(segment: string): string[] {
+  const tokens: string[] = []
+  let current = ""
+  let inSingle = false
+  let inDouble = false
+  let escape = false
+
+  for (const ch of segment) {
+    if (escape) {
+      current += ch
+      escape = false
+      continue
+    }
+
+    if (ch === "\\" && !inSingle) {
+      escape = true
+      continue
+    }
+
+    if (ch === "'" && !inDouble) {
+      inSingle = !inSingle
+      continue
+    }
+
+    if (ch === '"' && !inSingle) {
+      inDouble = !inDouble
+      continue
+    }
+
+    if (/\s/.test(ch) && !inSingle && !inDouble) {
+      if (current.length > 0) {
+        tokens.push(current)
+        current = ""
+      }
+      continue
+    }
+
+    current += ch
+  }
+
+  if (current.length > 0) {
+    tokens.push(current)
+  }
+
+  return tokens
+}
+
+function extractPathArgs(tokens: string[], startIndex: number): string[] {
+  const paths: string[] = []
+  for (let i = startIndex; i < tokens.length; i++) {
+    const token = tokens[i]
+    if (token.startsWith("-")) {
+      if (token === "--") {
+        startIndex = i + 1
+        continue
+      }
+      continue
+    }
+    paths.push(token)
+  }
+  return paths
+}
