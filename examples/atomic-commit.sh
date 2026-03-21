@@ -441,6 +441,10 @@ run_hook_mode() {
   input_json="$(cat)"
   [[ -z "$input_json" ]] && exit 0
 
+  # DEBUG: log the raw hook payload to diagnose deletion issues
+  printf '%s\n' "--- atomic-commit DEBUG $(date +%H:%M:%S) ---" >> /tmp/atomic-commit-debug.log
+  printf '%s\n' "$input_json" >> /tmp/atomic-commit-debug.log
+
   event="$(printf '%s' "$input_json" | jq -r '.event // empty')"
   tool_name="$(printf '%s' "$input_json" | jq -r '.tool_name // empty')"
   cwd="$(printf '%s' "$input_json" | jq -r '.cwd // empty')"
