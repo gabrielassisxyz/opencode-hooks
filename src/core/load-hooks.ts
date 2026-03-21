@@ -37,6 +37,9 @@ export interface HookLoadSnapshot extends HookDiscoveryResult {
 }
 
 type ParsedHooksFileResult = ParsedHooksFile & { readonly files: string[] }
+type DiscoveredHooksFileSnapshot =
+  | { readonly filePath: string; readonly content: string }
+  | { readonly filePath: string; readonly readError: string }
 
 export function parseHooksFile(filePath: string, content: string): ParsedHooksFileResult {
   const document = YAML.parseDocument(content)
@@ -125,27 +128,31 @@ export function loadDiscoveredHooks(options: HookLoadOptions = {}): HookDiscover
 
 export function loadDiscoveredHooksSnapshot(options: HookLoadOptions = {}): HookLoadSnapshot {
   const files = discoverHookConfigPaths(options)
-  const readFile = options.readFile ?? defaultReadFile
-  const signatureParts = files.map((filePath) => {
-    try {
-      return [filePath, readFile(filePath)] as const
-    } catch (error) {
-      return [filePath, `__read_error__:${formatHookReadError(error)}`] as const
-    }
-  })
+  const snapshots = snapshotDiscoveredHookFiles(files, options.readFile ?? defaultReadFile)
 
   return {
-    ...loadDiscoveredHooksFromFiles(files, options),
-    signature: JSON.stringify(signatureParts),
+    ...loadDiscoveredHooksFromSnapshots(snapshots),
+    signature: JSON.stringify(
+      snapshots.map((snapshot) =>
+        "content" in snapshot ? [snapshot.filePath, snapshot.content] : [snapshot.filePath, `__read_error__:${snapshot.readError}`],
+      ),
+    ),
   }
 }
 
 function loadDiscoveredHooksFromFiles(files: string[], options: HookLoadOptions): HookDiscoveryResult {
+  const readFile = options.readFile ?? defaultReadFile
+  const snapshots = snapshotDiscoveredHookFiles(files, readFile)
+
+  return loadDiscoveredHooksFromSnapshots(snapshots)
+}
+
+function loadDiscoveredHooksFromSnapshots(snapshots: readonly DiscoveredHooksFileSnapshot[]): HookDiscoveryResult {
   const hooks = new Map<HookConfig["event"], HookConfig[]>()
   const errors: HookValidationError[] = []
 
-  for (const filePath of files) {
-    const result = loadHooksFile(filePath, options.readFile)
+  for (const snapshot of snapshots) {
+    const result = loadSnapshotHooksFile(snapshot)
     const resolved = resolveOverrides(hooks, result.overrides)
     hooks.clear()
     mergeHookMapsInto(hooks, resolved.hooks)
@@ -154,7 +161,30 @@ function loadDiscoveredHooksFromFiles(files: string[], options: HookLoadOptions)
     errors.push(...result.errors)
   }
 
-  return { hooks, errors, files }
+  return { hooks, errors, files: snapshots.map((snapshot) => snapshot.filePath) }
+}
+
+function snapshotDiscoveredHookFiles(files: readonly string[], readFile: (filePath: string) => string): DiscoveredHooksFileSnapshot[] {
+  return files.map((filePath) => {
+    try {
+      return { filePath, content: readFile(filePath) }
+    } catch (error) {
+      return { filePath, readError: formatHookReadError(error) }
+    }
+  })
+}
+
+function loadSnapshotHooksFile(snapshot: DiscoveredHooksFileSnapshot): ParsedHooksFileResult {
+  if ("content" in snapshot) {
+    return parseHooksFile(snapshot.filePath, snapshot.content)
+  }
+
+  return {
+    hooks: new Map(),
+    overrides: [],
+    errors: [{ code: "invalid_frontmatter", filePath: snapshot.filePath, message: snapshot.readError }],
+    files: [snapshot.filePath],
+  }
 }
 
 export function mergeHookMaps(...hookMaps: HookMap[]): HookMap {
