@@ -1496,4 +1496,147 @@ describe("createHooksRuntime", () => {
       query: { directory },
     })
   })
+
+  it("async hooks return before action completes and serialize per event+session", async () => {
+    const { input } = createMockPluginInput()
+    const executionOrder: string[] = []
+    let resolveFirst: () => void
+    const firstBlocked = new Promise<void>((resolve) => { resolveFirst = resolve })
+
+    const executeBash = vi.fn(async ({ context }) => {
+      const label = `${context.event}:${context.tool_args?.filePath}`
+      executionOrder.push(`start:${label}`)
+
+      if (label === "file.changed:src/first.ts") {
+        await firstBlocked
+      }
+
+      executionOrder.push(`end:${label}`)
+      return {
+        command: "hook",
+        stdout: "",
+        stderr: "",
+        durationMs: 1,
+        exitCode: 0,
+        signal: null,
+        timedOut: false,
+        status: "success" as const,
+        blocking: false,
+      }
+    })
+
+    const hooks: HookMap = new Map([
+      [["file.changed" as const][0], [createHook("file.changed", { async: true, actions: [{ bash: "hook" }], source: { filePath: "a", index: 0 } })]],
+    ])
+
+    const runtime = createHooksRuntime(input as never, { hooks, executeBash })
+
+    await runtime["tool.execute.before"]?.(
+      { tool: "write", sessionID: "session-1", callID: "call-1" },
+      { args: { filePath: "src/first.ts", value: "first" } },
+    )
+    await runtime["tool.execute.after"]?.(
+      { tool: "write", sessionID: "session-1", callID: "call-1", args: {} },
+      { title: "", output: "", metadata: {} },
+    )
+
+    expect(executionOrder).toEqual(["start:file.changed:src/first.ts"])
+
+    await runtime["tool.execute.before"]?.(
+      { tool: "write", sessionID: "session-1", callID: "call-2" },
+      { args: { filePath: "src/second.ts", value: "second" } },
+    )
+    await runtime["tool.execute.after"]?.(
+      { tool: "write", sessionID: "session-1", callID: "call-2", args: {} },
+      { title: "", output: "", metadata: {} },
+    )
+
+    expect(executionOrder).toEqual(["start:file.changed:src/first.ts"])
+
+    resolveFirst!()
+    await new Promise((resolve) => setTimeout(resolve, 10))
+
+    expect(executionOrder).toEqual([
+      "start:file.changed:src/first.ts",
+      "end:file.changed:src/first.ts",
+      "start:file.changed:src/second.ts",
+      "end:file.changed:src/second.ts",
+    ])
+  })
+
+  it("async hook errors are caught and logged, not thrown", async () => {
+    const { input } = createMockPluginInput()
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+
+    const executeBash = vi.fn(async () => {
+      throw new Error("async hook exploded")
+    })
+
+    const hooks: HookMap = new Map([
+      [["file.changed" as const][0], [createHook("file.changed", { async: true, actions: [{ bash: "hook" }], source: { filePath: "a", index: 0 } })]],
+    ])
+
+    const runtime = createHooksRuntime(input as never, { hooks, executeBash })
+
+    await runtime["tool.execute.before"]?.(
+      { tool: "write", sessionID: "session-1", callID: "call-err" },
+      { args: { filePath: "src/error.ts", value: "error" } },
+    )
+    await runtime["tool.execute.after"]?.(
+      { tool: "write", sessionID: "session-1", callID: "call-err", args: {} },
+      { title: "", output: "", metadata: {} },
+    )
+
+    await new Promise((resolve) => setTimeout(resolve, 10))
+
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining("async hook exploded"),
+    )
+    errorSpy.mockRestore()
+  })
+
+  it("async hook with multiple actions preserves sequential order", async () => {
+    const { input } = createMockPluginInput()
+    const actionOrder: string[] = []
+
+    const executeBash = vi.fn(async ({ context }) => {
+      actionOrder.push(context.event)
+      await new Promise((resolve) => setTimeout(resolve, 5))
+      return {
+        command: "hook",
+        stdout: "",
+        stderr: "",
+        durationMs: 1,
+        exitCode: 0,
+        signal: null,
+        timedOut: false,
+        status: "success" as const,
+        blocking: false,
+      }
+    })
+
+    const hooks: HookMap = new Map([
+      [["file.changed" as const][0], [createHook("file.changed", {
+        async: true,
+        actions: [{ bash: "action-1" }, { bash: "action-2" }, { bash: "action-3" }],
+        source: { filePath: "a", index: 0 },
+      })]],
+    ])
+
+    const runtime = createHooksRuntime(input as never, { hooks, executeBash })
+
+    await runtime["tool.execute.before"]?.(
+      { tool: "write", sessionID: "session-1", callID: "call-seq" },
+      { args: { filePath: "src/seq.ts", value: "seq" } },
+    )
+    await runtime["tool.execute.after"]?.(
+      { tool: "write", sessionID: "session-1", callID: "call-seq", args: {} },
+      { title: "", output: "", metadata: {} },
+    )
+
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
+    expect(executeBash).toHaveBeenCalledTimes(3)
+    expect(actionOrder).toEqual(["file.changed", "file.changed", "file.changed"])
+  })
 })
