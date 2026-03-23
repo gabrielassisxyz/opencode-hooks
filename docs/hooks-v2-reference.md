@@ -100,9 +100,12 @@ Rules:
 
 - must be a boolean when present
 - cannot be `true` on `tool.before.*` or `tool.before.<name>` events because blocking requires synchronous execution
-- async actions for the same event and session are serialized — rapid-fire tool calls produce a queue, not concurrent overlapping executions
+- cannot be `true` on `session.idle` events because idle dispatch must complete before tracked changes are consumed
+- async hooks must use only `bash` actions; `command` and `tool` actions have no timeout and can stall the async queue indefinitely
+- async actions for the same event and source session are serialized — rapid-fire tool calls produce a queue, not concurrent overlapping executions; serialization is per source session, not per resolved target (e.g. `runIn: main` hooks from different child sessions run independently)
 - multiple actions within one async hook still execute sequentially (e.g. `git add` before `git commit`)
 - errors from async hooks are logged but never thrown — they cannot crash the host process
+- async execution is best-effort: background work is not guaranteed to complete if the host process exits before the queue drains
 
 ### `conditions`
 
