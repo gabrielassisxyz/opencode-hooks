@@ -74,6 +74,7 @@ export interface HookConfig {
   readonly actions: HookAction[]
   readonly scope: HookScope
   readonly runIn: HookRunIn
+  readonly async?: boolean
   readonly conditions?: HookCondition[]
   readonly source: HookConfigSource
 }
@@ -101,6 +102,7 @@ export type HookValidationErrorCode =
   | "duplicate_hook_id"
   | "override_target_not_found"
   | "invalid_override"
+  | "invalid_async"
 
 export interface HookValidationError {
   readonly code: HookValidationErrorCode
