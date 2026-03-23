@@ -95,6 +95,19 @@ hooks:
     actions:
       - bash: "$HOME/.config/opencode/hook/atomic-commit.sh"
 
+  # async: true makes the hook return immediately without blocking the agent.
+  # Use this for side-effect work that doesn't need to complete before the
+  # next tool call. Rapid-fire edits are serialized per session — each run
+  # waits for the previous one to finish before starting.
+  # async is NOT allowed on tool.before events (blocking requires sync).
+  - id: async-atomic-commit
+    event: file.changed
+    async: true
+    scope: main
+    conditions: [hasCodeChange]
+    actions:
+      - bash: "$HOME/.config/opencode/hook/atomic-commit.sh"
+
 # Override examples belong in a later file, such as <project>/.opencode/hook/hooks.yaml,
 # so they can target ids that were already loaded from an earlier global file.
 #
