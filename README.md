@@ -107,7 +107,7 @@ Validation rules enforced by the runtime:
 - each hook must be an object with a supported `event`
 - `scope`, if present, must be `all`, `main`, or `child`
 - `runIn`, if present, must be `current` or `main`
-- `async`, if present, must be a boolean; cannot be `true` on `tool.before` events
+- `async`, if present, must be a boolean; cannot be `true` on `tool.before` or `session.idle` events; async hooks must use only `bash` actions
 - `conditions`, if present, must be an array of supported condition names
 - `actions` must be a non-empty array
 - each action must define exactly one of `command`, `tool`, or `bash`
@@ -261,8 +261,8 @@ Only `tool.before.*` and `tool.before.<name>` hooks can block execution.
 - `session.idle` clears tracked changes only after successful dispatch
 - if idle dispatch fails, tracked changes are preserved for retry
 - reentrant `file.changed` and `tool.after.*` dispatches are queued and replayed after the active dispatch finishes
-- `async: true` hooks return immediately without blocking the tool pipeline; their actions run in the background
-- async actions for the same event and session are serialized to prevent overlapping executions
+- `async: true` hooks return immediately without blocking the tool pipeline; their actions run in the background as best-effort work
+- async actions for the same event and source session are serialized to prevent overlapping executions; note that serialization is per source session, not per target — `runIn: main` hooks from different child sessions are not serialized against each other
 
 ## Copy-paste examples
 
@@ -281,8 +281,9 @@ See [`examples/hooks.yaml`](examples/hooks.yaml) for:
 - `hasCodeChange` is extension-based and ignores extensionless code-like files
 - tool hooks depend on actual emitted OpenCode tool names
 - Windows discovery is supported, but bash actions still require a working shell runtime
-- `async: true` is not allowed on `tool.before.*` events; async hooks cannot block tool execution
-- async hook failures are logged but not retried
+- `async: true` is not allowed on `tool.before.*` or `session.idle` events; async hooks cannot block tool execution or idle dispatch
+- async hooks must use only `bash` actions; `command` and `tool` actions have no timeout and can stall the queue
+- async hook failures are logged but not retried; async execution is best-effort and not guaranteed to complete if the host process exits
 
 ## Explicit non-goals for v1/v2 runtime scope
 
