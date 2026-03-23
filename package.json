@@ -1,6 +1,6 @@
 {
   "name": "opencode-hooks",
-  "version": "0.1.0",
+  "version": "2026.3.23",
   "description": "Standalone OpenCode hooks runtime plugin scaffold.",
   "type": "module",
   "main": "dist/index.js",
