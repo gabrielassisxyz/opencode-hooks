@@ -164,6 +164,7 @@ export function createHooksRuntime(input: PluginInput, options: CreateHooksRunti
   const state = new SessionStateStore()
   const runBashHook = options.executeBash ?? executeBashHook
   const dispatchStates = new Map<string, DispatchState>()
+  const asyncQueues = new Map<string, Promise<void>>()
   const actionRecursionGuards = new AsyncLocalStorage<Set<string>>()
 
   function refreshHooks(): HookMap {
@@ -208,6 +209,7 @@ export function createHooksRuntime(input: PluginInput, options: CreateHooksRunti
         runBashHook,
         dispatchStates,
         actionRecursionGuards,
+        asyncQueues,
         "before",
         eventInput.tool,
         sessionID,
@@ -243,7 +245,7 @@ export function createHooksRuntime(input: PluginInput, options: CreateHooksRunti
           changes,
           toolName: eventInput.tool,
           toolArgs,
-        }, {}, dispatchStates, actionRecursionGuards)
+        }, {}, dispatchStates, actionRecursionGuards, asyncQueues)
       }
 
       await dispatchToolHooks(
@@ -253,6 +255,7 @@ export function createHooksRuntime(input: PluginInput, options: CreateHooksRunti
         runBashHook,
         dispatchStates,
         actionRecursionGuards,
+        asyncQueues,
         "after",
         eventInput.tool,
         sessionID,
@@ -277,7 +280,7 @@ export function createHooksRuntime(input: PluginInput, options: CreateHooksRunti
         }
 
         state.rememberSession(sessionID, pickString(info?.parentID) ?? null)
-        await dispatchHooks(activeHooks, state, input, runBashHook, "session.created", sessionID, {}, {}, dispatchStates, actionRecursionGuards)
+        await dispatchHooks(activeHooks, state, input, runBashHook, "session.created", sessionID, {}, {}, dispatchStates, actionRecursionGuards, asyncQueues)
         return
       }
 
@@ -290,7 +293,7 @@ export function createHooksRuntime(input: PluginInput, options: CreateHooksRunti
         
         state.rememberSession(sessionID, pickString(info?.parentID) ?? undefined)
         state.deleteSession(sessionID)
-        await dispatchHooks(activeHooks, state, input, runBashHook, "session.deleted", sessionID, {}, {}, dispatchStates, actionRecursionGuards)
+        await dispatchHooks(activeHooks, state, input, runBashHook, "session.deleted", sessionID, {}, {}, dispatchStates, actionRecursionGuards, asyncQueues)
         return
       }
 
@@ -305,7 +308,7 @@ export function createHooksRuntime(input: PluginInput, options: CreateHooksRunti
         state.beginIdleDispatch(sessionID, changes)
 
         try {
-          await dispatchHooks(activeHooks, state, input, runBashHook, "session.idle", sessionID, { files, changes }, {}, dispatchStates, actionRecursionGuards)
+          await dispatchHooks(activeHooks, state, input, runBashHook, "session.idle", sessionID, { files, changes }, {}, dispatchStates, actionRecursionGuards, asyncQueues)
           state.consumeFileChanges(sessionID, changes)
         } catch (error) {
           state.cancelIdleDispatch(sessionID)
@@ -323,6 +326,7 @@ async function dispatchToolHooks(
   runBashHook: ExecuteBashHook,
   dispatchStates: Map<string, DispatchState>,
   actionRecursionGuards: AsyncLocalStorage<Set<string>>,
+  asyncQueues: Map<string, Promise<void>>,
   phase: "before" | "after",
   toolName: string,
   sessionID: string,
@@ -339,6 +343,7 @@ async function dispatchToolHooks(
     { canBlock: phase === "before" },
     dispatchStates,
     actionRecursionGuards,
+    asyncQueues,
   )
   if (wildcardResult.blocked) {
     return wildcardResult
@@ -356,6 +361,7 @@ async function dispatchToolHooks(
       { canBlock: phase === "before" },
       dispatchStates,
       actionRecursionGuards,
+      asyncQueues,
     )
 
     if (result.blocked) {
@@ -377,6 +383,7 @@ async function dispatchHooks(
   options: { canBlock?: boolean } = {},
   dispatchStates: Map<string, DispatchState>,
   actionRecursionGuards: AsyncLocalStorage<Set<string>>,
+  asyncQueues: Map<string, Promise<void>>,
 ): Promise<HookExecutionResult> {
   const eventHooks = hooks.get(event)
   if (!eventHooks || eventHooks.length === 0) {
@@ -446,7 +453,7 @@ async function dispatchHooks(
 
   async function executeDispatchRequest(request: DispatchRequest): Promise<HookExecutionResult> {
     for (const hook of hooksForEvent) {
-      const result = await executeHook(hook, state, input, runBashHook, sessionID, request.context, request.options, actionRecursionGuards)
+      const result = await executeHook(hook, state, input, runBashHook, sessionID, request.context, request.options, actionRecursionGuards, asyncQueues)
       if (result.blocked) {
         return result
       }
@@ -465,6 +472,7 @@ async function executeHook(
   context: RuntimeActionContext,
   options: { canBlock?: boolean },
   actionRecursionGuards: AsyncLocalStorage<Set<string>>,
+  asyncQueues: Map<string, Promise<void>>,
 ): Promise<HookExecutionResult> {
   try {
     if (!(await shouldRunHook(hook, state, input, sessionID, context))) {
@@ -472,6 +480,35 @@ async function executeHook(
     }
   } catch (error) {
     logHookFailure(hook.event, hook.source.filePath, error)
+    return { blocked: false }
+  }
+
+  if (hook.async) {
+    const queueKey = `${hook.event}:${sessionID}`
+    const previous = asyncQueues.get(queueKey) ?? Promise.resolve()
+    const next = previous.then(async () => {
+      for (const action of hook.actions) {
+        await executeAction(
+          action,
+          hook.runIn,
+          input,
+          state,
+          runBashHook,
+          hook.event,
+          sessionID,
+          context,
+          hook.source.filePath,
+          actionRecursionGuards,
+        )
+      }
+    }).catch((error) => {
+      logHookFailure(hook.event, hook.source.filePath, error)
+    }).finally(() => {
+      if (asyncQueues.get(queueKey) === next) {
+        asyncQueues.delete(queueKey)
+      }
+    })
+    asyncQueues.set(queueKey, next)
     return { blocked: false }
   }
 
