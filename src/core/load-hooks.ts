@@ -232,7 +232,7 @@ function parseHookDefinition(
 
   const scopeResult = parseScope(filePath, hookDefinition.scope, index)
   const runInResult = parseRunIn(filePath, hookDefinition.runIn, index)
-  const asyncResult = parseAsync(filePath, hookDefinition.async, event, index)
+  const asyncResult = parseAsync(filePath, hookDefinition.async, event, hookDefinition.actions, index)
 
   const conditionsResult = parseConditions(filePath, hookDefinition.conditions, index)
   const actionsResult = parseActions(filePath, hookDefinition.actions, index)
@@ -339,7 +339,7 @@ function parseRunIn(filePath: string, runIn: unknown, index: number): { runIn: H
   return { runIn, errors: [] }
 }
 
-function parseAsync(filePath: string, async_: unknown, event: unknown, index: number): { async?: boolean; errors: HookValidationError[] } {
+function parseAsync(filePath: string, async_: unknown, event: unknown, actions: unknown, index: number): { async?: boolean; errors: HookValidationError[] } {
   if (async_ === undefined) {
     return { errors: [] }
   }
@@ -356,7 +356,19 @@ function parseAsync(filePath: string, async_: unknown, event: unknown, index: nu
     }
   }
 
-  return { async: async_ || undefined, errors: [] }
+  if (async_ && typeof event === "string" && event === "session.idle") {
+    return {
+      errors: [createError(filePath, "invalid_async", `hooks[${index}].async cannot be true for session.idle events because idle dispatch must complete before tracked changes are consumed.`, `hooks[${index}].async`)],
+    }
+  }
+
+  if (async_ && Array.isArray(actions) && actions.some((a) => typeof a === "object" && a !== null && ("command" in a || "tool" in a))) {
+    return {
+      errors: [createError(filePath, "invalid_async", `hooks[${index}].async hooks must use only bash actions. command and tool actions have no timeout and can stall the async queue.`, `hooks[${index}].async`)],
+    }
+  }
+
+  return { async: async_ === true ? true : undefined, errors: [] }
 }
 
 function parseConditions(
