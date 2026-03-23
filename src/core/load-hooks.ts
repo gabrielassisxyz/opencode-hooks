@@ -232,10 +232,11 @@ function parseHookDefinition(
 
   const scopeResult = parseScope(filePath, hookDefinition.scope, index)
   const runInResult = parseRunIn(filePath, hookDefinition.runIn, index)
+  const asyncResult = parseAsync(filePath, hookDefinition.async, event, index)
 
   const conditionsResult = parseConditions(filePath, hookDefinition.conditions, index)
   const actionsResult = parseActions(filePath, hookDefinition.actions, index)
-  const errors = [...idResult.errors, ...overrideResult.errors, ...scopeResult.errors, ...runInResult.errors, ...conditionsResult.errors, ...actionsResult.errors]
+  const errors = [...idResult.errors, ...overrideResult.errors, ...scopeResult.errors, ...runInResult.errors, ...asyncResult.errors, ...conditionsResult.errors, ...actionsResult.errors]
 
   if (errors.length > 0 || actionsResult.actions.length === 0) {
     return { errors }
@@ -247,6 +248,7 @@ function parseHookDefinition(
     actions: actionsResult.actions,
     scope: scopeResult.scope,
     runIn: runInResult.runIn,
+    ...(asyncResult.async ? { async: true } : {}),
     ...(conditionsResult.conditions ? { conditions: conditionsResult.conditions } : {}),
     source: { filePath, index },
   }
@@ -335,6 +337,26 @@ function parseRunIn(filePath: string, runIn: unknown, index: number): { runIn: H
   }
 
   return { runIn, errors: [] }
+}
+
+function parseAsync(filePath: string, async_: unknown, event: unknown, index: number): { async?: boolean; errors: HookValidationError[] } {
+  if (async_ === undefined) {
+    return { errors: [] }
+  }
+
+  if (typeof async_ !== "boolean") {
+    return {
+      errors: [createError(filePath, "invalid_async", `hooks[${index}].async must be a boolean.`, `hooks[${index}].async`)],
+    }
+  }
+
+  if (async_ && typeof event === "string" && event.startsWith("tool.before")) {
+    return {
+      errors: [createError(filePath, "invalid_async", `hooks[${index}].async cannot be true for tool.before events because blocking requires synchronous execution.`, `hooks[${index}].async`)],
+    }
+  }
+
+  return { async: async_ || undefined, errors: [] }
 }
 
 function parseConditions(
