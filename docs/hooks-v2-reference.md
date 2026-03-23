@@ -20,6 +20,7 @@ hooks:
     event: <hook-event>
     scope: <all|main|child>
     runIn: <current|main>
+    async: <boolean>
     conditions:
       - hasCodeChange
     actions:
@@ -88,6 +89,20 @@ Notes:
 
 - `runIn` affects command and tool actions
 - bash actions run directly in the runtime process context and do not attach to another OpenCode session
+
+### `async`
+
+Optional. Default: not set (synchronous).
+
+When `true`, the hook's actions execute in the background without blocking the tool pipeline. The hook returns immediately and actions run asynchronously.
+
+Rules:
+
+- must be a boolean when present
+- cannot be `true` on `tool.before.*` or `tool.before.<name>` events because blocking requires synchronous execution
+- async actions for the same event and session are serialized — rapid-fire tool calls produce a queue, not concurrent overlapping executions
+- multiple actions within one async hook still execute sequentially (e.g. `git add` before `git commit`)
+- errors from async hooks are logged but never thrown — they cannot crash the host process
 
 ### `conditions`
 
@@ -484,6 +499,21 @@ hooks:
     actions:
       - bash: "$HOME/.config/opencode/hook/atomic-commit.sh"
 ```
+
+### Non-blocking async automation
+
+```yaml
+hooks:
+  - id: async-atomic-commit
+    event: file.changed
+    async: true
+    scope: main
+    conditions: [hasCodeChange]
+    actions:
+      - bash: "$HOME/.config/opencode/hook/atomic-commit.sh"
+```
+
+The agent does not wait for the commit to finish. Rapid-fire edits are serialized — each commit runs after the previous one completes.
 
 ### Route child activity back to main
 
