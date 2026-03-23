@@ -1639,4 +1639,105 @@ describe("createHooksRuntime", () => {
     expect(executeBash).toHaveBeenCalledTimes(3)
     expect(actionOrder).toEqual(["file.changed", "file.changed", "file.changed"])
   })
+
+  it("sync and async hooks on the same event work correctly together", async () => {
+    const { input } = createMockPluginInput()
+    const executionOrder: string[] = []
+    let callIndex = 0
+
+    const executeBash = vi.fn(async ({ context }) => {
+      const index = callIndex++
+      if (index === 1) {
+        await new Promise((resolve) => setTimeout(resolve, 20))
+      }
+      executionOrder.push(`${context.event}:${context.tool_args?.filePath}`)
+      return {
+        command: "hook",
+        stdout: "",
+        stderr: "",
+        durationMs: 1,
+        exitCode: 0,
+        signal: null,
+        timedOut: false,
+        status: "success" as const,
+        blocking: false,
+      }
+    })
+
+    const hooks: HookMap = new Map([
+      [["file.changed" as const][0], [
+        createHook("file.changed", { actions: [{ bash: "sync-hook" }], source: { filePath: "a", index: 0 } }),
+        createHook("file.changed", { async: true, actions: [{ bash: "async-hook" }], source: { filePath: "a", index: 1 } }),
+      ]],
+    ])
+
+    const runtime = createHooksRuntime(input as never, { hooks, executeBash })
+
+    await runtime["tool.execute.before"]?.(
+      { tool: "write", sessionID: "session-1", callID: "call-mix" },
+      { args: { filePath: "src/mix.ts", value: "mix" } },
+    )
+    await runtime["tool.execute.after"]?.(
+      { tool: "write", sessionID: "session-1", callID: "call-mix", args: {} },
+      { title: "", output: "", metadata: {} },
+    )
+
+    expect(executionOrder).toEqual(["file.changed:src/mix.ts"])
+
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
+    expect(executionOrder).toEqual([
+      "file.changed:src/mix.ts",
+      "file.changed:src/mix.ts",
+    ])
+    expect(executeBash).toHaveBeenCalledTimes(2)
+  })
+
+  it("async queue cleans up after completion", async () => {
+    const { input } = createMockPluginInput()
+
+    const executeBash = vi.fn(async () => ({
+      command: "hook",
+      stdout: "",
+      stderr: "",
+      durationMs: 1,
+      exitCode: 0,
+      signal: null,
+      timedOut: false,
+      status: "success" as const,
+      blocking: false,
+    }))
+
+    const hooks: HookMap = new Map([
+      [["file.changed" as const][0], [createHook("file.changed", { async: true, actions: [{ bash: "hook" }], source: { filePath: "a", index: 0 } })]],
+    ])
+
+    const runtime = createHooksRuntime(input as never, { hooks, executeBash })
+
+    await runtime["tool.execute.before"]?.(
+      { tool: "write", sessionID: "session-1", callID: "call-cleanup" },
+      { args: { filePath: "src/cleanup.ts", value: "cleanup" } },
+    )
+    await runtime["tool.execute.after"]?.(
+      { tool: "write", sessionID: "session-1", callID: "call-cleanup", args: {} },
+      { title: "", output: "", metadata: {} },
+    )
+
+    await new Promise((resolve) => setTimeout(resolve, 10))
+
+    expect(executeBash).toHaveBeenCalledTimes(1)
+
+    await runtime["tool.execute.before"]?.(
+      { tool: "write", sessionID: "session-1", callID: "call-cleanup-2" },
+      { args: { filePath: "src/cleanup2.ts", value: "cleanup2" } },
+    )
+    await runtime["tool.execute.after"]?.(
+      { tool: "write", sessionID: "session-1", callID: "call-cleanup-2", args: {} },
+      { title: "", output: "", metadata: {} },
+    )
+
+    await new Promise((resolve) => setTimeout(resolve, 10))
+
+    expect(executeBash).toHaveBeenCalledTimes(2)
+  })
 })
