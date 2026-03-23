@@ -33,6 +33,7 @@ Read these in order:
 1. [`docs/hooks-v2-reference.md`](docs/hooks-v2-reference.md) for the current public config shape
 2. This branch loads `hooks.yaml`, not `hooks.md`, so use the reference above for migration-related behavior too
 3. [`examples/hooks.yaml`](examples/hooks.yaml) for copy-pasteable patterns
+4. [`docs/comparison-with-claude-code-hooks.md`](docs/comparison-with-claude-code-hooks.md) for how this compares to Claude Code's hook system
 
 ## Current config locations
 
