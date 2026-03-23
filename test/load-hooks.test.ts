@@ -195,6 +195,69 @@ describe("parseHooksFile", () => {
       expect.objectContaining({ code: "invalid_override", path: "hooks[1].disable" }),
     ])
   })
+
+  it("parses async: true into HookConfig for non-before events", () => {
+    const result = parseHooksFile(
+      "/repo/.opencode/hook/hooks.yaml",
+      `hooks:
+  - event: file.changed
+    async: true
+    actions:
+      - bash: "git commit"
+  - event: tool.after.write
+    async: true
+    actions:
+      - bash: "echo done"
+  - event: session.idle
+    actions:
+      - bash: "echo sync"
+`,
+    )
+
+    expect(result.errors).toEqual([])
+    expect(result.hooks.get("file.changed")?.[0]?.async).toBe(true)
+    expect(result.hooks.get("tool.after.write")?.[0]?.async).toBe(true)
+    expect(result.hooks.get("session.idle")?.[0]?.async).toBeUndefined()
+  })
+
+  it("rejects async: true on tool.before events", () => {
+    const result = parseHooksFile(
+      "/repo/.opencode/hook/hooks.yaml",
+      `hooks:
+  - event: tool.before.*
+    async: true
+    actions:
+      - bash: "echo blocked"
+  - event: tool.before.write
+    async: true
+    actions:
+      - bash: "echo blocked"
+`,
+    )
+
+    expect(Array.from(result.hooks.values()).flat()).toEqual([])
+    expect(result.errors).toEqual([
+      expect.objectContaining({ code: "invalid_async", path: "hooks[0].async" }),
+      expect.objectContaining({ code: "invalid_async", path: "hooks[1].async" }),
+    ])
+  })
+
+  it("rejects non-boolean async values", () => {
+    const result = parseHooksFile(
+      "/repo/.opencode/hook/hooks.yaml",
+      `hooks:
+  - event: file.changed
+    async: "yes"
+    actions:
+      - bash: "echo bad"
+`,
+    )
+
+    expect(Array.from(result.hooks.values()).flat()).toEqual([])
+    expect(result.errors).toEqual([
+      expect.objectContaining({ code: "invalid_async", path: "hooks[0].async" }),
+    ])
+  })
 })
 
 describe("hook config discovery", () => {
