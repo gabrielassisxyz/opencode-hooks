@@ -1,0 +1,128 @@
+# Example hook configuration for operators.
+# Copy the parts you want into either:
+# - ~/.config/opencode/hook/hooks.yaml
+# - <project>/.opencode/hook/hooks.yaml
+#
+# Current defaults in the runtime:
+# - scope defaults to all
+# - runIn defaults to current
+# - conditions are optional
+# - bash timeout defaults to 60000ms
+#
+# Migration notes:
+# - use hooks.yaml, not hooks.md
+# - use scope/runIn, not isMainSession
+# - prefer file.changed for file automation
+
+hooks:
+  # Scope controls which session emits the event.
+  - id: main-session-started
+    event: session.created
+    scope: main
+    actions:
+      - bash: 'echo "main session started: $OPENCODE_SESSION_ID"'
+
+  - id: main-session-ended
+    event: session.deleted
+    scope: main
+    actions:
+      - bash: 'echo "main session ended: $OPENCODE_SESSION_ID"'
+
+  # runIn controls where follow-up commands run.
+  # This keeps review-pr attached to the root session even if a child session
+  # triggered the hook.
+  - id: lint-and-review-on-change
+    event: file.changed
+    scope: all
+    runIn: main
+    conditions: [hasCodeChange]
+    actions:
+      - bash:
+          command: "npm run lint -- --fix"
+          timeout: 30000
+      - command:
+          name: review-pr
+          args: "main feature"
+
+  - id: test-when-idle
+    event: session.idle
+    scope: main
+    conditions: [hasCodeChange]
+    actions:
+      - bash: "npm test"
+
+  # Minimal example showing that scope and runIn can be omitted.
+  # This uses the defaults scope=all and runIn=current.
+  - id: typecheck-on-change
+    event: file.changed
+    conditions: [hasCodeChange]
+    actions:
+      - bash: "npm run typecheck"
+
+  - id: log-before-tools
+    event: tool.before.*
+    actions:
+      - bash: |
+          context=$(cat)
+          echo "before tool: $(echo "$context" | jq -r '.tool_name')"
+
+  - id: block-sensitive-writes
+    event: tool.before.write
+    actions:
+      - bash: |
+          file=$(cat | jq -r '.tool_args.filePath // .tool_args.file_path // .tool_args.path')
+          if echo "$file" | grep -qE '\.(env|pem|key)$'; then
+            echo "Cannot modify sensitive files: $file" >&2
+            exit 2
+          fi
+
+  # Advanced: tool.after hooks run for every matching tool execution.
+  # Prefer file.changed for file automation so hooks only see explicit mutation
+  # payloads from supported file-changing tools.
+  - id: audit-tool-usage
+    event: tool.after.*
+    actions:
+      - bash: |
+          context=$(cat)
+          echo "advanced after hook for $(echo "$context" | jq -r '.tool_name')"
+
+  # Recommended atomic commit wiring: trigger on file.changed instead of
+  # tool.after.* so the script only stages paths reported by the runtime.
+  - id: atomic-commit-on-change
+    event: file.changed
+    scope: main
+    conditions: [hasCodeChange]
+    actions:
+      - bash: "$HOME/.config/opencode/hook/atomic-commit.sh"
+
+  # async: true makes the hook return immediately without blocking the agent.
+  # Use this for side-effect work that doesn't need to complete before the
+  # next tool call. Rapid-fire edits are serialized per session — each run
+  # waits for the previous one to finish before starting.
+  # async is NOT allowed on tool.before events (blocking requires sync).
+  - id: async-atomic-commit
+    event: file.changed
+    async: true
+    scope: main
+    conditions: [hasCodeChange]
+    actions:
+      - bash: "$HOME/.config/opencode/hook/atomic-commit-async.sh"
+
+# Override examples belong in a later file, such as <project>/.opencode/hook/hooks.yaml,
+# so they can target ids that were already loaded from an earlier global file.
+#
+# hooks:
+#   - override: lint-and-review-on-change
+#     event: file.changed
+#     scope: main
+#     conditions: [hasCodeChange]
+#     actions:
+#       - bash:
+#           command: "pnpm lint --fix"
+#           timeout: 30000
+#       - command:
+#           name: review-pr
+#           args: "main docs"
+#
+#   - override: atomic-commit-on-change
+#     disable: true
