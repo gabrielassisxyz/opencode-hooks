@@ -83,6 +83,7 @@ hooks:
   - event: <hook-event>
     scope: <all|main|child>   # optional, defaults to all
     runIn: <current|main>     # optional, defaults to current
+    async: <boolean>          # optional, fire-and-forget execution
     conditions:               # optional
       - hasCodeChange
     actions:                  # required, non-empty
@@ -105,6 +106,7 @@ Validation rules enforced by the runtime:
 - each hook must be an object with a supported `event`
 - `scope`, if present, must be `all`, `main`, or `child`
 - `runIn`, if present, must be `current` or `main`
+- `async`, if present, must be a boolean; cannot be `true` on `tool.before` events
 - `conditions`, if present, must be an array of supported condition names
 - `actions` must be a non-empty array
 - each action must define exactly one of `command`, `tool`, or `bash`
@@ -258,6 +260,8 @@ Only `tool.before.*` and `tool.before.<name>` hooks can block execution.
 - `session.idle` clears tracked changes only after successful dispatch
 - if idle dispatch fails, tracked changes are preserved for retry
 - reentrant `file.changed` and `tool.after.*` dispatches are queued and replayed after the active dispatch finishes
+- `async: true` hooks return immediately without blocking the tool pipeline; their actions run in the background
+- async actions for the same event and session are serialized to prevent overlapping executions
 
 ## Copy-paste examples
 
@@ -276,6 +280,8 @@ See [`examples/hooks.yaml`](examples/hooks.yaml) for:
 - `hasCodeChange` is extension-based and ignores extensionless code-like files
 - tool hooks depend on actual emitted OpenCode tool names
 - Windows discovery is supported, but bash actions still require a working shell runtime
+- `async: true` is not allowed on `tool.before.*` events; async hooks cannot block tool execution
+- async hook failures are logged but not retried
 
 ## Explicit non-goals for v1/v2 runtime scope
 
