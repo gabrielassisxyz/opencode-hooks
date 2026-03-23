@@ -258,6 +258,64 @@ describe("parseHooksFile", () => {
       expect.objectContaining({ code: "invalid_async", path: "hooks[0].async" }),
     ])
   })
+
+  it("rejects async: true on session.idle events", () => {
+    const result = parseHooksFile(
+      "/repo/.opencode/hook/hooks.yaml",
+      `hooks:
+  - event: session.idle
+    async: true
+    actions:
+      - bash: "echo idle"
+`,
+    )
+
+    expect(Array.from(result.hooks.values()).flat()).toEqual([])
+    expect(result.errors).toEqual([
+      expect.objectContaining({ code: "invalid_async", path: "hooks[0].async" }),
+    ])
+  })
+
+  it("rejects async: true with command or tool actions", () => {
+    const result = parseHooksFile(
+      "/repo/.opencode/hook/hooks.yaml",
+      `hooks:
+  - event: file.changed
+    async: true
+    actions:
+      - command: "review-pr"
+  - event: tool.after.write
+    async: true
+    actions:
+      - tool:
+          name: write
+          args:
+            filePath: test.txt
+`,
+    )
+
+    expect(Array.from(result.hooks.values()).flat()).toEqual([])
+    expect(result.errors).toEqual([
+      expect.objectContaining({ code: "invalid_async", path: "hooks[0].async" }),
+      expect.objectContaining({ code: "invalid_async", path: "hooks[1].async" }),
+    ])
+  })
+
+  it("allows async: true with only bash actions", () => {
+    const result = parseHooksFile(
+      "/repo/.opencode/hook/hooks.yaml",
+      `hooks:
+  - event: file.changed
+    async: true
+    actions:
+      - bash: "git add ."
+      - bash: "git commit -m 'auto'"
+`,
+    )
+
+    expect(result.errors).toEqual([])
+    expect(result.hooks.get("file.changed")?.[0]?.async).toBe(true)
+  })
 })
 
 describe("hook config discovery", () => {
