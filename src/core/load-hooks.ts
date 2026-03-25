@@ -5,6 +5,7 @@ import YAML from "yaml"
 import {
   type HookAction,
   type HookBashActionConfig,
+  type HookBehavior,
   type HookCommandActionConfig,
   type HookCondition,
   type HookConfig,
@@ -15,6 +16,7 @@ import {
   type HookToolActionConfig,
   type HookValidationError,
   type ParsedHooksFile,
+  isHookBehavior,
   isHookCondition,
   isHookEvent,
   isHookRunIn,
@@ -232,11 +234,12 @@ function parseHookDefinition(
 
   const scopeResult = parseScope(filePath, hookDefinition.scope, index)
   const runInResult = parseRunIn(filePath, hookDefinition.runIn, index)
+  const actionResult = parseHookAction(filePath, hookDefinition.action, event, index)
   const asyncResult = parseAsync(filePath, hookDefinition.async, event, hookDefinition.actions, index)
 
   const conditionsResult = parseConditions(filePath, hookDefinition.conditions, index)
   const actionsResult = parseActions(filePath, hookDefinition.actions, index)
-  const errors = [...idResult.errors, ...overrideResult.errors, ...scopeResult.errors, ...runInResult.errors, ...asyncResult.errors, ...conditionsResult.errors, ...actionsResult.errors]
+  const errors = [...idResult.errors, ...overrideResult.errors, ...scopeResult.errors, ...runInResult.errors, ...actionResult.errors, ...asyncResult.errors, ...conditionsResult.errors, ...actionsResult.errors]
 
   if (errors.length > 0 || actionsResult.actions.length === 0) {
     return { errors }
@@ -245,6 +248,7 @@ function parseHookDefinition(
   const hook: HookConfig = {
     ...(idResult.id ? { id: idResult.id } : {}),
     event,
+    ...(actionResult.action ? { action: actionResult.action } : {}),
     actions: actionsResult.actions,
     scope: scopeResult.scope,
     runIn: runInResult.runIn,
@@ -369,6 +373,31 @@ function parseAsync(filePath: string, async_: unknown, event: unknown, actions: 
   }
 
   return { async: async_ === true ? true : undefined, errors: [] }
+}
+
+function parseHookAction(
+  filePath: string,
+  action: unknown,
+  event: HookConfig["event"],
+  index: number,
+): { action?: HookBehavior; errors: HookValidationError[] } {
+  if (action === undefined) {
+    return { errors: [] }
+  }
+
+  if (!isHookBehavior(action)) {
+    return {
+      errors: [createError(filePath, "invalid_hook_action", `hooks[${index}].action must be: stop.`, `hooks[${index}].action`)],
+    }
+  }
+
+  if (!event.startsWith("tool.before.")) {
+    return {
+      errors: [createError(filePath, "invalid_hook_action", `hooks[${index}].action is only supported on tool.before.* events.`, `hooks[${index}].action`)],
+    }
+  }
+
+  return { action, errors: [] }
 }
 
 function parseConditions(
