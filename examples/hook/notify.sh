@@ -56,19 +56,19 @@ if [ -n "$SESSION_ID" ]; then
 fi
 
 send_macos_notification() {
-  TITLE="$TITLE" MESSAGE="$MESSAGE" PROJECT_NAME="$PROJECT_NAME" python3 - <<'PY' | osascript >/dev/null 2>>"$DEBUG_LOG"
-import json
-import os
+  osascript - "$TITLE" "$MESSAGE" "$PROJECT_NAME" >/dev/null 2>>"$DEBUG_LOG" <<'APPLESCRIPT'
+on run argv
+  set notificationTitle to item 1 of argv
+  set notificationMessage to item 2 of argv
+  set notificationSubtitle to item 3 of argv
 
-title = json.dumps(os.environ.get("TITLE", "OpenCode"))
-message = json.dumps(os.environ.get("MESSAGE", "Session is idle"))
-subtitle = json.dumps(os.environ.get("PROJECT_NAME", ""))
-
-if os.environ.get("PROJECT_NAME"):
-    print(f"display notification {message} with title {title} subtitle {subtitle}")
-else:
-    print(f"display notification {message} with title {title}")
-PY
+  if notificationSubtitle is equal to "" then
+    display notification notificationMessage with title notificationTitle
+  else
+    display notification notificationMessage with title notificationTitle subtitle notificationSubtitle
+  end if
+end run
+APPLESCRIPT
 }
 
 send_linux_notification() {
