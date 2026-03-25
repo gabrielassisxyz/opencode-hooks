@@ -46,17 +46,66 @@ EVENT="$(json_get event)"
 SESSION_ID="$(json_get session_id)"
 CWD="$(json_get cwd)"
 PROJECT_DIR="${OPENCODE_PROJECT_DIR:-${CWD:-}}"
-PROJECT_NAME="${OPENCODE_NOTIFY_SUBTITLE:-${PROJECT_DIR##*/}}"
+PROJECT_NAME="${PROJECT_DIR##*/}"
 
-TITLE="${OPENCODE_NOTIFY_TITLE:-OpenCode}"
-MESSAGE="${OPENCODE_NOTIFY_MESSAGE:-Session is idle}"
-
-if [ -n "$SESSION_ID" ]; then
-  MESSAGE="$MESSAGE — ${SESSION_ID:0:8}"
+BRANCH_NAME=""
+if command -v git >/dev/null 2>&1 && [ -n "$PROJECT_DIR" ]; then
+  BRANCH_NAME="$(git -C "$PROJECT_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
 fi
 
+if [ -n "$BRANCH_NAME" ] && [ "$BRANCH_NAME" != "HEAD" ]; then
+  SUBTITLE_DEFAULT="${PROJECT_NAME}:${BRANCH_NAME}"
+else
+  SUBTITLE_DEFAULT="$PROJECT_NAME"
+fi
+
+FILE_COUNT="$(python3 -c '
+import json, sys
+try:
+    payload = json.load(sys.stdin)
+except Exception:
+    print(0)
+    raise SystemExit
+
+files = payload.get("files") or []
+print(len([f for f in files if isinstance(f, str) and f.strip()]))
+' <<< "$INPUT")"
+
+FIRST_FILE="$(python3 -c '
+import json, sys
+try:
+    payload = json.load(sys.stdin)
+except Exception:
+    raise SystemExit
+
+for value in payload.get("files") or []:
+    if isinstance(value, str) and value.strip():
+        print(value)
+        break
+' <<< "$INPUT")"
+
+TITLE="${OPENCODE_NOTIFY_TITLE:-OpenCode Hook}"
+PROJECT_NAME="${OPENCODE_NOTIFY_PROJECT_NAME:-$PROJECT_NAME}"
+SUBTITLE="${OPENCODE_NOTIFY_SUBTITLE:-$SUBTITLE_DEFAULT}"
+
+if [ "$FILE_COUNT" = "0" ]; then
+  MESSAGE="No tracked file changes"
+elif [ "$FILE_COUNT" = "1" ] && [ -n "$FIRST_FILE" ]; then
+  MESSAGE="1 changed file: $FIRST_FILE"
+elif [ -n "$FIRST_FILE" ]; then
+  MESSAGE="$FILE_COUNT changed files · latest: $FIRST_FILE"
+else
+  MESSAGE="$FILE_COUNT changed files"
+fi
+
+MESSAGE="${OPENCODE_NOTIFY_MESSAGE:-$MESSAGE}"
+
+send_terminal_notification() {
+  terminal-notifier -title "$TITLE" -subtitle "$SUBTITLE" -message "$MESSAGE" >/dev/null 2>>"$DEBUG_LOG"
+}
+
 send_macos_notification() {
-  osascript - "$TITLE" "$MESSAGE" "$PROJECT_NAME" >/dev/null 2>>"$DEBUG_LOG" <<'APPLESCRIPT'
+  osascript - "$TITLE" "$MESSAGE" "$SUBTITLE" >/dev/null 2>>"$DEBUG_LOG" <<'APPLESCRIPT'
 on run argv
   set notificationTitle to item 1 of argv
   set notificationMessage to item 2 of argv
@@ -79,8 +128,15 @@ send_linux_notification() {
   notify-send "$TITLE" "$body" >/dev/null 2>&1
 }
 
-if command -v osascript >/dev/null 2>&1; then
-  debug "sending macOS notification title=$TITLE subtitle=$PROJECT_NAME message=$MESSAGE"
+if command -v terminal-notifier >/dev/null 2>&1; then
+  debug "sending terminal-notifier notification title=$TITLE subtitle=$SUBTITLE message=$MESSAGE"
+  if send_terminal_notification; then
+    debug "terminal-notifier notification sent"
+  else
+    debug "terminal-notifier notification failed"
+  fi
+elif command -v osascript >/dev/null 2>&1; then
+  debug "sending macOS notification title=$TITLE subtitle=$SUBTITLE message=$MESSAGE"
   if send_macos_notification; then
     debug "macOS notification sent"
   else
