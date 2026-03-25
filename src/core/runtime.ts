@@ -426,9 +426,9 @@ async function dispatchHooks(
     if (!options.canBlock) {
       await drainPendingRequests()
     } else {
-      queueMicrotask(() => {
+      setTimeout(() => {
         void drainPendingRequests()
-      })
+      }, 0)
     }
   } else {
     currentState.active = false
