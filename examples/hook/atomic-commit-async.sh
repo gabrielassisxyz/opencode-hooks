@@ -43,6 +43,7 @@ if [[ -n "$OPENCODE_ATOMIC_DEBUG" && "$OPENCODE_ATOMIC_DEBUG" != "0" && "$OPENCO
 else
   debug() { :; }
 fi
+###
 
 STATE_DIR_PREFIX="/tmp/opencode-atomic-commit"
 OPENCODE_COMMIT_MODEL="${OPENCODE_COMMIT_MODEL:-opencode/big-pickle}"
