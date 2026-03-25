@@ -15,7 +15,7 @@ describe("parseHooksFile", () => {
     action: stop
     scope: main
     runIn: main
-    conditions: [matchesCodeFiles]
+    conditions: [matchesCodeFile]
     actions:
       - bash:
           command: npm test
