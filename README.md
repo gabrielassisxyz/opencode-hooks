@@ -78,6 +78,10 @@ hooks:
     async: <boolean>          # optional, fire-and-forget execution
     conditions:               # optional
       - matchesCodeFiles
+      - matchesAnyPath: src/**/*.ts
+      - matchesAllPaths:
+          - package.json
+          - apps/*/package.json
     actions:                  # required, non-empty
       - command: <string>
       - command:
@@ -100,7 +104,7 @@ Validation rules enforced by the runtime:
 - `runIn`, if present, must be `current` or `main`
 - `action`, if present, must be `stop` and is only supported on `tool.before.*` and `tool.before.<name>` hooks
 - `async`, if present, must be a boolean; cannot be `true` on `tool.before` or `session.idle` events; async hooks must use only `bash` actions
-- `conditions`, if present, must be an array of supported condition names
+- `conditions`, if present, must be an array of supported condition entries
 - `actions` must be a non-empty array
 - each action must define exactly one of `command`, `tool`, or `bash`
 
@@ -161,8 +165,43 @@ All configured conditions must pass for a hook to run.
 | Condition | Meaning |
 |---|---|
 | `matchesCodeFiles` | Run only when tracked modified files include at least one supported code extension |
+| `matchesAnyPath` | Run only when at least one final changed file path matches one or more glob patterns |
+| `matchesAllPaths` | Run only when every final changed file path matches at least one glob pattern |
 
 `matchesCodeFiles` is extension-based. Extensionless files such as `Dockerfile` do not currently count as code changes.
+
+`matchesAnyPath` and `matchesAllPaths` only work on `file.changed` and `session.idle`. Both accept either a single string or a string array, and both fail when there are no changed files to evaluate.
+
+Examples:
+
+```yaml
+hooks:
+  - event: file.changed
+    conditions:
+      - matchesAnyPath: src/**/*.ts
+    actions:
+      - bash: "npm run lint -- --fix"
+
+  - event: session.idle
+    scope: main
+    conditions:
+      - matchesAllPaths:
+          - package.json
+          - apps/*/package.json
+    actions:
+      - bash: "npm test"
+```
+
+Invalid usage example:
+
+```yaml
+hooks:
+  - event: tool.after.write
+    conditions:
+      - matchesAnyPath: src/**/*.ts # invalid: path conditions are file.changed/session.idle only
+    actions:
+      - bash: "echo nope"
+```
 
 ## Actions
 

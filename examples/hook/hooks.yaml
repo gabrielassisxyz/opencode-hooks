@@ -34,7 +34,11 @@ hooks:
     event: file.changed
     scope: all
     runIn: main
-    conditions: [matchesCodeFiles]
+    conditions:
+      - matchesCodeFiles
+      - matchesAnyPath:
+          - src/**/*.{ts,tsx,js,jsx}
+          - package.json
     actions:
       - bash:
           command: "npm run lint -- --fix"
@@ -46,9 +50,21 @@ hooks:
   - id: test-when-idle
     event: session.idle
     scope: main
-    conditions: [matchesCodeFiles]
+    conditions:
+      - matchesAllPaths:
+          - package.json
+          - apps/*/package.json
     actions:
       - bash: "npm test"
+
+  # Path conditions only work on file.changed and session.idle.
+  # They evaluate final changed file paths, so rename source paths do not count.
+  - id: docs-only-summary
+    event: file.changed
+    conditions:
+      - matchesAnyPath: docs/**/*.md
+    actions:
+      - bash: "printf 'docs changed\n'"
 
   # Desktop notification example for when the main session becomes idle.
   # Useful as a lightweight signal that the agent finished a burst of work.

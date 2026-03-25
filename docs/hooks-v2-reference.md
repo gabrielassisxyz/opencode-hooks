@@ -26,6 +26,10 @@ hooks:
     async: <boolean>
     conditions:
       - matchesCodeFiles
+      - matchesAnyPath: src/**/*.ts
+      - matchesAllPaths:
+          - package.json
+          - apps/*/package.json
     actions:
       - command: <string>
 ```
@@ -136,8 +140,55 @@ Optional.
 Supported values:
 
 - `matchesCodeFiles`
+- `matchesAnyPath: <string|string[]>`
+- `matchesAllPaths: <string|string[]>`
 
 All configured conditions must pass.
+
+Rules:
+
+- `matchesCodeFiles` checks whether at least one tracked changed file has a supported code extension
+- `matchesAnyPath` passes when at least one final changed file path matches at least one supplied glob pattern
+- `matchesAllPaths` passes when every final changed file path matches at least one supplied glob pattern
+- `matchesAnyPath` and `matchesAllPaths` only work on `file.changed` and `session.idle`
+- path conditions accept either a non-empty string or a non-empty string array
+- empty strings, empty arrays, non-string entries, and unknown condition keys are rejected
+- path conditions fail when there are no changed files to evaluate
+
+Example:
+
+```yaml
+hooks:
+  - id: lint-src-on-change
+    event: file.changed
+    conditions:
+      - matchesAnyPath: src/**/*.ts
+    actions:
+      - bash: "npm run lint -- --fix"
+
+  - id: verify-package-edits-when-idle
+    event: session.idle
+    scope: main
+    conditions:
+      - matchesAllPaths:
+          - package.json
+          - apps/*/package.json
+    actions:
+      - bash: "npm test"
+```
+
+Invalid example:
+
+```yaml
+hooks:
+  - event: tool.after.write
+    conditions:
+      - matchesAnyPath: src/**/*.ts
+    actions:
+      - bash: "echo invalid"
+```
+
+The example above is rejected because path conditions are only supported on `file.changed` and `session.idle`.
 
 ### `actions`
 
@@ -328,7 +379,9 @@ Example:
 hooks:
   - id: lint-on-change
     event: file.changed
-    conditions: [matchesCodeFiles]
+    conditions:
+      - matchesCodeFiles
+      - matchesAnyPath: src/**/*.ts
     actions:
       - bash:
           command: "npm run lint -- --fix"
@@ -537,7 +590,11 @@ hooks:
   - id: atomic-commit-on-change
     event: file.changed
     scope: main
-    conditions: [matchesCodeFiles]
+    conditions:
+      - matchesCodeFiles
+      - matchesAnyPath:
+          - src/**/*.{ts,tsx,js,jsx}
+          - package.json
     actions:
       - bash: "$HOME/.config/opencode/hook/atomic-commit.sh"
 ```
