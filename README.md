@@ -82,6 +82,7 @@ hooks:
 ```yaml
 hooks:
   - event: <hook-event>
+    action: <stop>             # optional, only for tool.before.* hooks
     scope: <all|main|child>   # optional, defaults to all
     runIn: <current|main>     # optional, defaults to current
     async: <boolean>          # optional, fire-and-forget execution
@@ -107,6 +108,7 @@ Validation rules enforced by the runtime:
 - each hook must be an object with a supported `event`
 - `scope`, if present, must be `all`, `main`, or `child`
 - `runIn`, if present, must be `current` or `main`
+- `action`, if present, must be `stop` and is only supported on `tool.before.*` and `tool.before.<name>` hooks
 - `async`, if present, must be a boolean; cannot be `true` on `tool.before` or `session.idle` events; async hooks must use only `bash` actions
 - `conditions`, if present, must be an array of supported condition names
 - `actions` must be a non-empty array
@@ -249,8 +251,28 @@ Example `file.changed` payload:
 Only `tool.before.*` and `tool.before.<name>` hooks can block execution.
 
 - a bash action that exits with `2` blocks the tool
+- `action: stop` escalates a blocking pre-tool hook into a best-effort `session.abort(...)` for the active session
 - `tool.after.*`, `tool.after.<name>`, `file.changed`, and session hooks do not block execution
 - non-blocking failures are logged and later actions continue
+
+Example:
+
+```yaml
+hooks:
+  - event: tool.before.bash
+    action: stop
+    actions:
+      - bash: |
+          payload=$(cat)
+          cmd=$(printf '%s' "$payload" | jq -r '.tool_args.command // empty')
+
+          case "$cmd" in
+            "git push"|git\ push\ *)
+              echo "Blocked and stopping session: git push is not allowed." >&2
+              exit 2
+              ;;
+          esac
+```
 
 ## Execution behavior on this branch
 
