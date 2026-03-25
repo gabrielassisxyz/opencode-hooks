@@ -103,8 +103,12 @@ hooks:
             exit 2
           fi
 
-  # Reusable hardcoded blocklist example. Edit BLOCKED_PATTERNS in the script to
-  # control which bash commands are denied.
+  # Reusable hardcoded blocklist example. Edit BLOCKED_COMMANDS in the script to
+  # control which bash commands are denied with a simple array like:
+  #   BLOCKED_COMMANDS=(
+  #     "git push"
+  #     "git push --force"
+  #   )
   - id: block-bash-commands-from-script
     event: tool.before.bash
     actions:

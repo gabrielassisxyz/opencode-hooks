@@ -3,7 +3,7 @@ set -euo pipefail
 
 # block-commands.sh — OpenCode hook example for blocking selected bash commands.
 #
-# Designed for tool.before.bash hooks. Edit BLOCKED_PATTERNS below to control
+# Designed for tool.before.bash hooks. Edit BLOCKED_COMMANDS below to control
 # which commands are denied.
 #
 # Usage:
@@ -25,11 +25,16 @@ debug() {
   fi
 }
 
-# Hardcoded blocklist. Add one regex pattern per line.
-# Patterns are tested against the full bash command string.
-BLOCKED_PATTERNS=(
-  '(^|[[:space:]])git[[:space:]]+push([[:space:]]|$)'
-  '(^|[[:space:]])git[[:space:]]+push[[:space:]].*--force([[:space:]]|$)'
+# Hardcoded blocklist. Add one command per line.
+# A command is blocked when the bash command starts with the listed value,
+# followed by end-of-string or whitespace.
+# Examples:
+#   "git push"
+#   "git push --force"
+#   "rm -rf"
+BLOCKED_COMMANDS=(
+  "git push"
+  "git push --force"
 )
 
 INPUT="$(cat 2>/dev/null || true)"
@@ -52,9 +57,26 @@ print(command if isinstance(command, str) else "")
 
 debug "checking command: $COMMAND"
 
-for pattern in "${BLOCKED_PATTERNS[@]}"; do
-  if printf '%s' "$COMMAND" | grep -Eq "$pattern"; then
-    debug "blocked by pattern: $pattern"
+command_matches() {
+  local command="$1"
+  local blocked="$2"
+
+  case "$command" in
+    "$blocked")
+      return 0
+      ;;
+    "$blocked"\ *)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+for blocked in "${BLOCKED_COMMANDS[@]}"; do
+  if command_matches "$COMMAND" "$blocked"; then
+    debug "blocked by command: $blocked"
     echo "Blocked by block-commands.sh: $COMMAND" >&2
     exit 2
   fi
