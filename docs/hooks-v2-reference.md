@@ -25,7 +25,7 @@ hooks:
     runIn: <current|main>
     async: <boolean>
     conditions:
-      - hasCodeChange
+      - matchesCodeFiles
     actions:
       - command: <string>
 ```
@@ -135,7 +135,7 @@ Optional.
 
 Supported values:
 
-- `hasCodeChange`
+- `matchesCodeFiles`
 
 All configured conditions must pass.
 
@@ -328,7 +328,7 @@ Example:
 hooks:
   - id: lint-on-change
     event: file.changed
-    conditions: [hasCodeChange]
+    conditions: [matchesCodeFiles]
     actions:
       - bash:
           command: "npm run lint -- --fix"
@@ -418,7 +418,7 @@ Global file:
 hooks:
   - id: format-on-change
     event: file.changed
-    conditions: [hasCodeChange]
+    conditions: [matchesCodeFiles]
     actions:
       - bash: "npm run lint -- --fix"
 ```
@@ -430,7 +430,7 @@ hooks:
   - override: format-on-change
     event: file.changed
     scope: main
-    conditions: [hasCodeChange]
+    conditions: [matchesCodeFiles]
     actions:
       - bash:
           command: "pnpm lint --fix"
@@ -537,7 +537,7 @@ hooks:
   - id: atomic-commit-on-change
     event: file.changed
     scope: main
-    conditions: [hasCodeChange]
+    conditions: [matchesCodeFiles]
     actions:
       - bash: "$HOME/.config/opencode/hook/atomic-commit.sh"
 ```
@@ -550,7 +550,7 @@ hooks:
     event: file.changed
     async: true
     scope: main
-    conditions: [hasCodeChange]
+    conditions: [matchesCodeFiles]
     actions:
       - bash: "$HOME/.config/opencode/hook/atomic-commit.sh"
 ```

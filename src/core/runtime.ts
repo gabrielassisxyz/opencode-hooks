@@ -552,7 +552,7 @@ async function shouldRunHook(
   }
 
   for (const condition of hook.conditions ?? []) {
-    if (condition === "hasCodeChange") {
+    if (condition === "matchesCodeFiles") {
       if (!(context.files ?? []).some(hasCodeExtension)) {
         return false
       }

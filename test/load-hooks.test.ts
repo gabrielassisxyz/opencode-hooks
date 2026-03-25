@@ -15,7 +15,7 @@ describe("parseHooksFile", () => {
     action: stop
     scope: main
     runIn: main
-    conditions: [hasCodeChange]
+    conditions: [matchesCodeFiles]
     actions:
       - bash:
           command: npm test
@@ -42,7 +42,7 @@ describe("parseHooksFile", () => {
       action: "stop",
       scope: "main",
       runIn: "main",
-      conditions: ["hasCodeChange"],
+      conditions: ["matchesCodeFiles"],
       source: { filePath: "/repo/.opencode/hook/hooks.yaml", index: 0 },
     })
     expect(toolHook?.actions).toEqual([
@@ -143,13 +143,13 @@ describe("parseHooksFile", () => {
     actions:
       - bash: invalid-run-in
   - event: session.idle
-    conditions: [hasCodeChanges]
+    conditions: [matchesCodeFiles]
     actions:
       - bash: invalid-condition
   - event: tool.after.write
     scope: child
     runIn: main
-    conditions: [hasCodeChange]
+    conditions: [matchesCodeFiles]
     actions:
       - bash: valid
 `,
@@ -159,7 +159,7 @@ describe("parseHooksFile", () => {
       expect.objectContaining({
         scope: "child",
         runIn: "main",
-        conditions: ["hasCodeChange"],
+        conditions: ["matchesCodeFiles"],
       }),
     ])
     expect(result.errors).toEqual([

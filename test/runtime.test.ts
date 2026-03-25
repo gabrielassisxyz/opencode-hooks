@@ -123,7 +123,7 @@ describe("createHooksRuntime", () => {
         "session.idle",
         [
           createHook("session.idle", {
-            conditions: ["hasCodeChange"],
+            conditions: ["matchesCodeFiles"],
             actions: [{ bash: "hook" }],
             source: { filePath: "a", index: 0 },
           }),
@@ -293,7 +293,7 @@ describe("createHooksRuntime", () => {
         "session.idle",
         [
           createHook("session.idle", {
-            conditions: ["hasCodeChange"],
+            conditions: ["matchesCodeFiles"],
             actions: [{ bash: "hook" }],
             source: { filePath: "a", index: 1 },
           }),
@@ -372,7 +372,7 @@ describe("createHooksRuntime", () => {
         "session.idle",
         [
           createHook("session.idle", {
-            conditions: ["hasCodeChange"],
+            conditions: ["matchesCodeFiles"],
             actions: [{ bash: "hook" }],
             source: { filePath: "a", index: 0 },
           }),
@@ -459,7 +459,7 @@ describe("createHooksRuntime", () => {
         "session.idle",
         [
           createHook("session.idle", {
-            conditions: ["hasCodeChange"],
+            conditions: ["matchesCodeFiles"],
             actions: [{ bash: "hook" }],
             source: { filePath: "a", index: 0 },
           }),
@@ -529,7 +529,7 @@ describe("createHooksRuntime", () => {
         "session.idle",
         [
           createHook("session.idle", {
-            conditions: ["hasCodeChange"],
+            conditions: ["matchesCodeFiles"],
             actions: [{ bash: "hook" }],
             source: { filePath: "a", index: 0 },
           }),

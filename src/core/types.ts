@@ -1,5 +1,5 @@
 export const SESSION_HOOK_EVENTS = ["session.idle", "session.created", "session.deleted", "file.changed"] as const
-export const HOOK_CONDITIONS = ["hasCodeChange"] as const
+export const HOOK_CONDITIONS = ["matchesCodeFiles"] as const
 export const HOOK_SCOPES = ["all", "main", "child"] as const
 export const HOOK_RUN_IN = ["current", "main"] as const
 export const HOOK_BEHAVIORS = ["stop"] as const

@@ -69,7 +69,7 @@ hooks:
   - id: lint-on-change
     event: file.changed
     scope: main
-    conditions: [hasCodeChange]
+    conditions: [matchesCodeFiles]
     actions:
       - bash:
           command: "npm run lint -- --fix"

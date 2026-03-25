@@ -24,7 +24,7 @@ set -euo pipefail
 #       - event: file.changed
 #         async: true
 #         scope: all
-#         conditions: [hasCodeChange]
+#         conditions: [matchesCodeFiles]
 #         actions:
 #           - bash: "OPENCODE_ATOMIC_DEBUG=1  $HOME/.config/opencode/hook/atomic-commit-async-api.sh"
 #

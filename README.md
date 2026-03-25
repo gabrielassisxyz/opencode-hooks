@@ -35,7 +35,7 @@ Then add a minimal hook:
 ```yaml
 hooks:
   - event: file.changed
-    conditions: [hasCodeChange]
+    conditions: [matchesCodeFiles]
     actions:
       - bash: "npm test"
 ```
@@ -77,7 +77,7 @@ hooks:
     runIn: <current|main>     # optional, defaults to current
     async: <boolean>          # optional, fire-and-forget execution
     conditions:               # optional
-      - hasCodeChange
+      - matchesCodeFiles
     actions:                  # required, non-empty
       - command: <string>
       - command:
@@ -160,9 +160,9 @@ All configured conditions must pass for a hook to run.
 
 | Condition | Meaning |
 |---|---|
-| `hasCodeChange` | Run only when tracked modified files include at least one supported code extension |
+| `matchesCodeFiles` | Run only when tracked modified files include at least one supported code extension |
 
-`hasCodeChange` is extension-based on this branch. Extensionless files such as `Dockerfile` do not currently count as code changes.
+`matchesCodeFiles` is extension-based. Extensionless files such as `Dockerfile` do not currently count as code changes.
 
 ## Actions
 
@@ -294,7 +294,7 @@ See [`examples/hooks.yaml`](examples/hooks.yaml) for:
 ## Known limitations
 
 - file tracking is limited to supported OpenCode mutation tools, not arbitrary filesystem changes
-- `hasCodeChange` is extension-based and ignores extensionless code-like files
+- `matchesCodeFiles` is extension-based and ignores extensionless code-like files
 - tool hooks depend on actual emitted OpenCode tool names
 - Windows discovery is supported, but bash actions still require a working shell runtime
 - `async: true` is not allowed on `tool.before.*` or `session.idle` events; async hooks cannot block tool execution or idle dispatch

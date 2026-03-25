@@ -34,7 +34,7 @@ hooks:
     event: file.changed
     scope: all
     runIn: main
-    conditions: [hasCodeChange]
+    conditions: [matchesCodeFiles]
     actions:
       - bash:
           command: "npm run lint -- --fix"
@@ -46,7 +46,7 @@ hooks:
   - id: test-when-idle
     event: session.idle
     scope: main
-    conditions: [hasCodeChange]
+    conditions: [matchesCodeFiles]
     actions:
       - bash: "npm test"
 
@@ -66,7 +66,7 @@ hooks:
   # This uses the defaults scope=all and runIn=current.
   - id: typecheck-on-change
     event: file.changed
-    conditions: [hasCodeChange]
+    conditions: [matchesCodeFiles]
     actions:
       - bash: "npm run typecheck"
 
@@ -155,7 +155,7 @@ hooks:
   - id: atomic-commit-on-change
     event: file.changed
     scope: main
-    conditions: [hasCodeChange]
+    conditions: [matchesCodeFiles]
     actions:
       - bash: "$HOME/.config/opencode/hook/atomic-commit.sh"
 
@@ -168,7 +168,7 @@ hooks:
     event: file.changed
     async: true
     scope: main
-    conditions: [hasCodeChange]
+    conditions: [matchesCodeFiles]
     actions:
       - bash: "$HOME/.config/opencode/hook/atomic-commit-async.sh"
 
@@ -179,7 +179,7 @@ hooks:
 #   - override: lint-and-review-on-change
 #     event: file.changed
 #     scope: main
-#     conditions: [hasCodeChange]
+#     conditions: [matchesCodeFiles]
 #     actions:
 #       - bash:
 #           command: "pnpm lint --fix"
