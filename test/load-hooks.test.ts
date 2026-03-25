@@ -12,6 +12,7 @@ describe("parseHooksFile", () => {
       "/repo/.opencode/hook/hooks.yaml",
       `hooks:
   - event: tool.before.*
+    action: stop
     scope: main
     runIn: main
     conditions: [hasCodeChange]
@@ -38,6 +39,7 @@ describe("parseHooksFile", () => {
     const toolHook = result.hooks.get("tool.before.*")?.[0]
     expect(toolHook).toMatchObject({
       event: "tool.before.*",
+      action: "stop",
       scope: "main",
       runIn: "main",
       conditions: ["hasCodeChange"],
@@ -73,6 +75,37 @@ describe("parseHooksFile", () => {
       expect.objectContaining({ code: "invalid_scope", path: "hooks[1].scope" }),
       expect.objectContaining({ code: "invalid_action", path: "hooks[1].actions[0].bash" }),
       expect.objectContaining({ code: "invalid_actions", path: "hooks[2].actions" }),
+    ])
+  })
+
+  it("validates hook-level action: stop", () => {
+    const result = parseHooksFile(
+      "/repo/.opencode/hook/hooks.yaml",
+      `hooks:
+  - event: tool.before.bash
+    action: stop
+    actions:
+      - bash: echo ok
+  - event: session.idle
+    action: stop
+    actions:
+      - bash: echo nope
+  - event: tool.after.write
+    action: stop
+    actions:
+      - bash: echo nope
+  - event: tool.before.write
+    action: abort
+    actions:
+      - bash: echo nope
+`,
+    )
+
+    expect(result.hooks.get("tool.before.bash")).toEqual([expect.objectContaining({ action: "stop" })])
+    expect(result.errors).toEqual([
+      expect.objectContaining({ code: "invalid_hook_action", path: "hooks[1].action" }),
+      expect.objectContaining({ code: "invalid_hook_action", path: "hooks[2].action" }),
+      expect.objectContaining({ code: "invalid_hook_action", path: "hooks[3].action" }),
     ])
   })
 
