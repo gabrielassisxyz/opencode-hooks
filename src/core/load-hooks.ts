@@ -13,12 +13,14 @@ import {
   type HookRunIn,
   type HookScope,
   type HookMap,
+  type HookPathConditionKey,
   type HookToolActionConfig,
   type HookValidationError,
   type ParsedHooksFile,
   isHookBehavior,
-  isHookCondition,
   isHookEvent,
+  isHookLegacyCondition,
+  isHookPathConditionKey,
   isHookRunIn,
   isHookScope,
 } from "./types.js"
@@ -237,7 +239,7 @@ function parseHookDefinition(
   const actionResult = parseHookAction(filePath, hookDefinition.action, event, index)
   const asyncResult = parseAsync(filePath, hookDefinition.async, event, hookDefinition.actions, index)
 
-  const conditionsResult = parseConditions(filePath, hookDefinition.conditions, index)
+  const conditionsResult = parseConditions(filePath, hookDefinition.conditions, event, index)
   const actionsResult = parseActions(filePath, hookDefinition.actions, index)
   const errors = [...idResult.errors, ...overrideResult.errors, ...scopeResult.errors, ...runInResult.errors, ...actionResult.errors, ...asyncResult.errors, ...conditionsResult.errors, ...actionsResult.errors]
 
@@ -403,6 +405,7 @@ function parseHookAction(
 function parseConditions(
   filePath: string,
   conditions: unknown,
+  event: HookConfig["event"],
   index: number,
 ): { conditions?: HookCondition[]; errors: HookValidationError[] } {
   if (conditions === undefined) {
@@ -415,14 +418,119 @@ function parseConditions(
     }
   }
 
-  const invalidIndex = conditions.findIndex((condition) => !isHookCondition(condition))
-  if (invalidIndex >= 0) {
+  const parsedConditions: HookCondition[] = []
+
+  for (const [conditionIndex, condition] of conditions.entries()) {
+    if (isHookLegacyCondition(condition)) {
+      parsedConditions.push(condition)
+      continue
+    }
+
+    const parsedCondition = parseStructuredCondition(filePath, condition, event, index, conditionIndex)
+    if (parsedCondition.error) {
+      return { errors: [parsedCondition.error] }
+    }
+
+    parsedConditions.push(parsedCondition.condition)
+  }
+
+  return { conditions: parsedConditions, errors: [] }
+}
+
+function parseStructuredCondition(
+  filePath: string,
+  condition: unknown,
+  event: HookConfig["event"],
+  hookIndex: number,
+  conditionIndex: number,
+): { condition: HookCondition; error?: undefined } | { condition?: undefined; error: HookValidationError } {
+  const conditionPath = `hooks[${hookIndex}].conditions[${conditionIndex}]`
+
+  if (!isRecord(condition)) {
     return {
-      errors: [createError(filePath, "invalid_conditions", `hooks[${index}].conditions[${invalidIndex}] is not a supported condition.`, `hooks[${index}].conditions[${invalidIndex}]`)],
+      error: createError(filePath, "invalid_conditions", `${conditionPath} is not a supported condition.`, conditionPath),
     }
   }
 
-  return { conditions: [...conditions], errors: [] }
+  const keys = Object.keys(condition)
+  if (keys.length !== 1) {
+    return {
+      error: createError(
+        filePath,
+        "invalid_conditions",
+        `${conditionPath} must define exactly one supported condition key.`,
+        conditionPath,
+      ),
+    }
+  }
+
+  const [key] = keys
+  if (!isHookPathConditionKey(key)) {
+    return {
+      error: createError(filePath, "invalid_conditions", `${conditionPath}.${key} is not a supported condition key.`, `${conditionPath}.${key}`),
+    }
+  }
+
+  if (!supportsPathConditions(event)) {
+    return {
+      error: createError(
+        filePath,
+        "invalid_conditions",
+        `${conditionPath}.${key} is only supported on file.changed and session.idle hooks.`,
+        `${conditionPath}.${key}`,
+      ),
+    }
+  }
+
+  const values = normalizePathConditionValues(condition[key], `${conditionPath}.${key}`)
+  if (values.error) {
+    return { error: createError(filePath, "invalid_conditions", values.error.message, values.error.path) }
+  }
+
+  return { condition: { [key]: values.values } as Record<HookPathConditionKey, readonly string[]> as HookCondition }
+}
+
+function normalizePathConditionValues(
+  value: unknown,
+  path: string,
+): { values: readonly string[]; error?: undefined } | { values?: undefined; error: { message: string; path: string } } {
+  if (isNonEmptyString(value)) {
+    return { values: [value] }
+  }
+
+  if (!Array.isArray(value)) {
+    return {
+      error: {
+        message: `${path} must be a non-empty string or non-empty string array.`,
+        path,
+      },
+    }
+  }
+
+  if (value.length === 0) {
+    return {
+      error: {
+        message: `${path} must not be an empty array.`,
+        path,
+      },
+    }
+  }
+
+  const invalidIndex = value.findIndex((entry) => !isNonEmptyString(entry))
+  if (invalidIndex >= 0) {
+    return {
+      error: {
+        message: `${path}[${invalidIndex}] must be a non-empty string.`,
+        path: `${path}[${invalidIndex}]`,
+      },
+    }
+  }
+
+  return { values: [...value] }
+}
+
+function supportsPathConditions(event: HookConfig["event"]): event is "file.changed" | "session.idle" {
+  return event === "file.changed" || event === "session.idle"
 }
 
 function parseActions(

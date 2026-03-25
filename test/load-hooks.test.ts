@@ -168,6 +168,72 @@ describe("parseHooksFile", () => {
     ])
   })
 
+  it("normalizes structured path conditions for supported events", () => {
+    const result = parseHooksFile(
+      "/repo/.opencode/hook/hooks.yaml",
+      `hooks:
+  - event: file.changed
+    conditions:
+      - matchesAnyPath: src/**/*.ts
+      - matchesAllPaths:
+          - package.json
+          - apps/*/package.json
+      - matchesCodeFiles
+    actions:
+      - bash: echo ok
+`,
+    )
+
+    expect(result.errors).toEqual([])
+    expect(result.hooks.get("file.changed")).toEqual([
+      expect.objectContaining({
+        conditions: [
+          { matchesAnyPath: ["src/**/*.ts"] },
+          { matchesAllPaths: ["package.json", "apps/*/package.json"] },
+          "matchesCodeFiles",
+        ],
+      }),
+    ])
+  })
+
+  it("rejects invalid structured path conditions", () => {
+    const result = parseHooksFile(
+      "/repo/.opencode/hook/hooks.yaml",
+      `hooks:
+  - event: tool.after.write
+    conditions:
+      - matchesAnyPath: src/**/*.ts
+    actions:
+      - bash: echo nope
+  - event: file.changed
+    conditions:
+      - unknownCondition: src/**/*.ts
+    actions:
+      - bash: echo nope
+  - event: file.changed
+    conditions:
+      - matchesAnyPath: []
+    actions:
+      - bash: echo nope
+  - event: session.idle
+    conditions:
+      - matchesAllPaths:
+          - ok
+          - 123
+    actions:
+      - bash: echo nope
+`,
+    )
+
+    expect(Array.from(result.hooks.values()).flat()).toEqual([])
+    expect(result.errors).toEqual([
+      expect.objectContaining({ code: "invalid_conditions", path: "hooks[0].conditions[0].matchesAnyPath" }),
+      expect.objectContaining({ code: "invalid_conditions", path: "hooks[1].conditions[0].unknownCondition" }),
+      expect.objectContaining({ code: "invalid_conditions", path: "hooks[2].conditions[0].matchesAnyPath" }),
+      expect.objectContaining({ code: "invalid_conditions", path: "hooks[3].conditions[0].matchesAllPaths[1]" }),
+    ])
+  })
+
   it("parses hook ids, detects duplicates, and collects overrides", () => {
     const result = parseHooksFile(
       "/repo/.opencode/hook/hooks.yaml",

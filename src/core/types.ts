@@ -1,5 +1,6 @@
 export const SESSION_HOOK_EVENTS = ["session.idle", "session.created", "session.deleted", "file.changed"] as const
-export const HOOK_CONDITIONS = ["matchesCodeFiles"] as const
+export const LEGACY_HOOK_CONDITIONS = ["matchesCodeFiles"] as const
+export const PATH_HOOK_CONDITION_KEYS = ["matchesAnyPath", "matchesAllPaths"] as const
 export const HOOK_SCOPES = ["all", "main", "child"] as const
 export const HOOK_RUN_IN = ["current", "main"] as const
 export const HOOK_BEHAVIORS = ["stop"] as const
@@ -8,7 +9,12 @@ export type SessionHookEvent = (typeof SESSION_HOOK_EVENTS)[number]
 export type ToolHookPhase = "before" | "after"
 export type ToolHookEvent = `tool.${ToolHookPhase}.*` | `tool.${ToolHookPhase}.${string}`
 export type HookEvent = SessionHookEvent | ToolHookEvent
-export type HookCondition = (typeof HOOK_CONDITIONS)[number]
+export type HookLegacyCondition = (typeof LEGACY_HOOK_CONDITIONS)[number]
+export type HookPathConditionKey = (typeof PATH_HOOK_CONDITION_KEYS)[number]
+export type HookPathCondition =
+  | { readonly matchesAnyPath: readonly string[] }
+  | { readonly matchesAllPaths: readonly string[] }
+export type HookCondition = HookLegacyCondition | HookPathCondition
 export type HookScope = (typeof HOOK_SCOPES)[number]
 export type HookRunIn = (typeof HOOK_RUN_IN)[number]
 export type HookBehavior = (typeof HOOK_BEHAVIORS)[number]
@@ -125,8 +131,12 @@ export function isHookEvent(value: unknown): value is HookEvent {
   return typeof value === "string" && (SESSION_HOOK_EVENTS.includes(value as SessionHookEvent) || /^tool\.(before|after)\.(\*|.+)$/.test(value))
 }
 
-export function isHookCondition(value: unknown): value is HookCondition {
-  return typeof value === "string" && HOOK_CONDITIONS.includes(value as HookCondition)
+export function isHookLegacyCondition(value: unknown): value is HookLegacyCondition {
+  return typeof value === "string" && LEGACY_HOOK_CONDITIONS.includes(value as HookLegacyCondition)
+}
+
+export function isHookPathConditionKey(value: unknown): value is HookPathConditionKey {
+  return typeof value === "string" && PATH_HOOK_CONDITION_KEYS.includes(value as HookPathConditionKey)
 }
 
 export function isHookScope(value: unknown): value is HookScope {
