@@ -1,5 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks"
-import { extname, matchesGlob } from "node:path"
+import { extname, isAbsolute, matchesGlob, relative } from "node:path"
 
 import type { Hooks, PluginInput } from "@opencode-ai/plugin"
 
@@ -557,7 +557,7 @@ async function shouldRunHook(
     return false
   }
 
-  const changedPaths = getFinalChangedPaths(context)
+  const changedPaths = getFinalChangedPaths(input.directory, context)
 
   for (const condition of hook.conditions ?? []) {
     if (condition === "matchesCodeFiles") {
@@ -592,12 +592,30 @@ async function shouldRunHook(
   return true
 }
 
-function getFinalChangedPaths(context: RuntimeActionContext): readonly string[] {
+function getFinalChangedPaths(projectDir: string, context: RuntimeActionContext): readonly string[] {
   if (context.changes && context.changes.length > 0) {
-    return context.changes.map((change) => (change.operation === "rename" ? change.toPath : change.path))
+    return context.changes.map((change) => normalizeConditionPath(projectDir, change.operation === "rename" ? change.toPath : change.path))
   }
 
-  return context.files ?? []
+  return (context.files ?? []).map((filePath) => normalizeConditionPath(projectDir, filePath))
+}
+
+function normalizeConditionPath(projectDir: string, filePath: string): string {
+  const normalizedPath = normalizeGlobCandidate(filePath)
+  if (!isAbsolute(filePath)) {
+    return normalizedPath
+  }
+
+  const projectRelativePath = normalizeGlobCandidate(relative(projectDir, filePath))
+  if (projectRelativePath !== "" && projectRelativePath !== "." && !projectRelativePath.startsWith("../")) {
+    return projectRelativePath
+  }
+
+  return normalizedPath
+}
+
+function normalizeGlobCandidate(filePath: string): string {
+  return filePath.replaceAll("\\", "/").replace(/^\.\//, "")
 }
 
 async function executeAction(

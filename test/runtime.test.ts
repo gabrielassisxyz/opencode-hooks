@@ -315,12 +315,12 @@ describe("createHooksRuntime", () => {
         args: {
           patchText: [
             "*** Begin Patch",
-            "*** Update File: docs/old-name.md",
-            "*** Move to: src/renamed.ts",
+            "*** Update File: ./docs/old-name.md",
+            `*** Move to: ${input.directory}/src/renamed.ts`,
             "@@",
             "-old",
             "+new",
-            "*** Update File: package.json",
+            `*** Update File: ${input.directory}/package.json`,
             "@@",
             "-old",
             "+new",
@@ -544,27 +544,19 @@ describe("createHooksRuntime", () => {
     expect(observedCommands).toEqual([])
 
     await runtime["tool.execute.before"]?.(
-      { tool: "apply_patch", sessionID: "session-1", callID: "call-idle-conditions" },
-      {
-        args: {
-          patchText: [
-            "*** Begin Patch",
-            "*** Update File: docs/old-name.md",
-            "*** Move to: src/renamed.ts",
-            "@@",
-            "-old",
-            "+new",
-            "*** Update File: package.json",
-            "@@",
-            "-old",
-            "+new",
-            "*** End Patch",
-          ].join("\n"),
-        },
-      },
+      { tool: "write", sessionID: "session-1", callID: "call-idle-src" },
+      { args: { filePath: "./src/renamed.ts", value: "one" } },
     )
     await runtime["tool.execute.after"]?.(
-      { tool: "apply_patch", sessionID: "session-1", callID: "call-idle-conditions", args: {} },
+      { tool: "write", sessionID: "session-1", callID: "call-idle-src", args: {} },
+      { title: "", output: "", metadata: {} },
+    )
+    await runtime["tool.execute.before"]?.(
+      { tool: "write", sessionID: "session-1", callID: "call-idle-package" },
+      { args: { filePath: `${input.directory}/package.json`, value: "two" } },
+    )
+    await runtime["tool.execute.after"]?.(
+      { tool: "write", sessionID: "session-1", callID: "call-idle-package", args: {} },
       { title: "", output: "", metadata: {} },
     )
     await runtime.event?.({ event: { type: "session.idle", properties: { sessionID: "session-1" } } } as never)
