@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+w#!/usr/bin/env bash
 set -euo pipefail
 
 # atomic-commit-async-api.sh — OpenCode hook for async atomic commits (direct API variant).
@@ -15,7 +15,7 @@ set -euo pipefail
 # Requires:
 #   OPENAI_API_KEY      — bearer token for the API
 #   OPENAI_BASE_URL     — API base URL (default: https://api.openai.com/v1)
-#   OPENAI_MODEL        — model name  (default: gpt-4o-mini)
+#   OPENAI_MODEL        — model name  (default: gpt-5.4-mini)
 #   OPENAI_API_TIMEOUT  — request timeout in seconds (default: 15)
 #
 # Usage:
@@ -59,7 +59,7 @@ STATE_DIR_PREFIX="/tmp/opencode-atomic-commit"
 
 # API configuration (any OpenAI-compatible endpoint)
 OPENAI_BASE_URL="${OPENAI_BASE_URL:-https://api.openai.com/v1}"
-OPENAI_MODEL="${OPENAI_MODEL:-gpt-4o-mini}"
+OPENAI_MODEL="${OPENAI_MODEL:-gpt-5.4-mini}"
 OPENAI_API_TIMEOUT="${OPENAI_API_TIMEOUT:-15}"
 
 SYSTEM_PROMPT='You are a git commit message generator. Follow this format EXACTLY:
