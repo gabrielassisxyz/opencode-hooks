@@ -60,7 +60,11 @@ send_macos_notification() {
 }
 
 send_linux_notification() {
-  notify-send "$TITLE" "$MESSAGE" ${PROJECT_NAME:+"$PROJECT_NAME"} >/dev/null 2>&1
+  local body="$MESSAGE"
+  if [ -n "$PROJECT_NAME" ]; then
+    body="$MESSAGE ($PROJECT_NAME)"
+  fi
+  notify-send "$TITLE" "$body" >/dev/null 2>&1
 }
 
 if command -v osascript >/dev/null 2>&1; then
