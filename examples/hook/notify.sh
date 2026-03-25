@@ -16,6 +16,14 @@ set -euo pipefail
 INPUT="$(cat 2>/dev/null || true)"
 [ -z "$INPUT" ] && exit 0
 
+DEBUG_LOG="${OPENCODE_NOTIFY_LOG:-/tmp/opencode-notify.log}"
+
+debug() {
+  if [ "${OPENCODE_NOTIFY_DEBUG:-0}" = "1" ]; then
+    printf '[%s] %s\n' "$(date +%H:%M:%S)" "$*" >> "$DEBUG_LOG"
+  fi
+}
+
 json_get() {
   local key="$1"
   python3 -c '
@@ -30,10 +38,6 @@ except Exception:
 value = payload.get(key, "")
 print(value if isinstance(value, str) else "")
 ' "$key" <<< "$INPUT"
-}
-
-json_quote() {
-  python3 -c 'import json, sys; print(json.dumps(sys.stdin.read()))'
 }
 
 EVENT="$(json_get event)"
@@ -52,11 +56,19 @@ if [ -n "$SESSION_ID" ]; then
 fi
 
 send_macos_notification() {
-  local quoted_message quoted_title quoted_subtitle
-  quoted_message="$(printf '%s' "$MESSAGE" | json_quote)"
-  quoted_title="$(printf '%s' "$TITLE" | json_quote)"
-  quoted_subtitle="$(printf '%s' "$PROJECT_NAME" | json_quote)"
-  osascript -e "display notification ${quoted_message} with title ${quoted_title} subtitle ${quoted_subtitle}" >/dev/null 2>&1
+  TITLE="$TITLE" MESSAGE="$MESSAGE" PROJECT_NAME="$PROJECT_NAME" python3 - <<'PY' | osascript >/dev/null 2>>"$DEBUG_LOG"
+import json
+import os
+
+title = json.dumps(os.environ.get("TITLE", "OpenCode"))
+message = json.dumps(os.environ.get("MESSAGE", "Session is idle"))
+subtitle = json.dumps(os.environ.get("PROJECT_NAME", ""))
+
+if os.environ.get("PROJECT_NAME"):
+    print(f"display notification {message} with title {title} subtitle {subtitle}")
+else:
+    print(f"display notification {message} with title {title}")
+PY
 }
 
 send_linux_notification() {
@@ -68,10 +80,21 @@ send_linux_notification() {
 }
 
 if command -v osascript >/dev/null 2>&1; then
-  send_macos_notification || true
+  debug "sending macOS notification title=$TITLE subtitle=$PROJECT_NAME message=$MESSAGE"
+  if send_macos_notification; then
+    debug "macOS notification sent"
+  else
+    debug "macOS notification failed"
+  fi
 elif command -v notify-send >/dev/null 2>&1; then
-  send_linux_notification || true
+  debug "sending Linux notification title=$TITLE message=$MESSAGE"
+  if send_linux_notification; then
+    debug "Linux notification sent"
+  else
+    debug "Linux notification failed"
+  fi
 else
+  debug "no supported notification command found"
   printf '[notify-hook] %s: %s\n' "$TITLE" "$MESSAGE" >&2
 fi
 
