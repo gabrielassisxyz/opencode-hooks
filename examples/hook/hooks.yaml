@@ -78,6 +78,31 @@ hooks:
           context=$(cat)
           echo "before tool: $(echo "$context" | jq -r '.tool_name')"
 
+  # Useful for learning what the bash tool actually receives before execution.
+  # Start with this logger, inspect /tmp/opencode-bash-hook.log, then tighten the
+  # policy with a blocking hook once you know the command shapes you care about.
+  - id: log-bash-commands
+    event: tool.before.bash
+    actions:
+      - bash: |
+          payload=$(cat)
+          cmd=$(printf '%s' "$payload" | jq -r '.tool_args.command // empty')
+          printf '[hook] bash command: %s\n' "$cmd" >> /tmp/opencode-bash-hook.log
+
+  # Example blocking policy for dangerous bash commands. Exiting with status 2 in
+  # tool.before.* prevents the tool from running.
+  - id: block-git-push
+    event: tool.before.bash
+    actions:
+      - bash: |
+          payload=$(cat)
+          cmd=$(printf '%s' "$payload" | jq -r '.tool_args.command // empty')
+
+          if printf '%s' "$cmd" | grep -Eq '(^|[[:space:]])git[[:space:]]+push([[:space:]]|$)'; then
+            echo "Blocked: git push is not allowed from OpenCode." >&2
+            exit 2
+          fi
+
   - id: block-sensitive-writes
     event: tool.before.write
     actions:
