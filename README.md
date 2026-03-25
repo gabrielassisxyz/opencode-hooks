@@ -51,8 +51,6 @@ Hooks are merged from global and project locations.
 | macOS / Linux | `~/.config/opencode/hook/hooks.yaml` | `<project>/.opencode/hook/hooks.yaml` |
 | Windows | `~/.config/opencode/hook/hooks.yaml` preferred, otherwise `%APPDATA%/opencode/hook/hooks.yaml` | `<project>/.opencode/hook/hooks.yaml` |
 
-Important migration note: this runtime loads `hooks.yaml`, not `hooks.md`.
-
 ## Start with these defaults
 
 Unless you need something more specific:
@@ -295,7 +293,6 @@ See [`examples/hooks.yaml`](examples/hooks.yaml) for:
 
 ## Known limitations
 
-- only `hooks.yaml` is discovered; `hooks.md` is a migration target, not a supported input
 - file tracking is limited to supported OpenCode mutation tools, not arbitrary filesystem changes
 - `hasCodeChange` is extension-based and ignores extensionless code-like files
 - tool hooks depend on actual emitted OpenCode tool names

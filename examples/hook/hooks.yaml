@@ -10,7 +10,6 @@
 # - bash timeout defaults to 60000ms
 #
 # Migration notes:
-# - use hooks.yaml, not hooks.md
 # - use scope/runIn, not isMainSession
 # - prefer file.changed for file automation
 

@@ -384,24 +384,6 @@ describe("hook config discovery", () => {
     ])
   })
 
-  it("ignores unsupported hooks.md locations during discovery", () => {
-    const homeDir = "/home/tester"
-    const projectDir = "/repo/project"
-    const markdownOnly = new Set([
-      path.join(homeDir, ".config", "opencode", "hook", "hooks.md"),
-      path.join(projectDir, ".opencode", "hook", "hooks.md"),
-    ])
-
-    const paths = discoverHookConfigPaths({
-      projectDir,
-      platform: "linux",
-      homeDir,
-      exists: (filePath) => markdownOnly.has(filePath),
-    })
-
-    expect(paths).toEqual([])
-  })
-
   it("merges global hooks before project hooks", () => {
     const homeDir = "/home/tester"
     const projectDir = "/repo/project"

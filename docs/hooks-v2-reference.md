@@ -14,8 +14,6 @@ The runtime discovers hooks in this order:
 
 Global hooks load first. Project hooks load second.
 
-Only `hooks.yaml` is supported. `hooks.md` is ignored.
-
 ## Top-level shape
 
 ```yaml
