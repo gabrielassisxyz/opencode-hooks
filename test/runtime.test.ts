@@ -11,6 +11,7 @@ function createMockPluginInput() {
   const command = vi.fn(async () => ({ data: {}, response: { status: 200 } }))
   const prompt = vi.fn(async () => ({ data: {}, response: { status: 200 } }))
   const get = vi.fn(async () => ({ data: {} }))
+  const abort = vi.fn(async () => ({ data: {}, response: { status: 200 } }))
 
   return {
     input: {
@@ -20,12 +21,14 @@ function createMockPluginInput() {
           command,
           prompt,
           get,
+          abort,
         },
       },
     },
     command,
     prompt,
     get,
+    abort,
   }
 }
 
@@ -760,6 +763,99 @@ describe("createHooksRuntime", () => {
       "tool.after.write",
     ])
     expect(executeBash.mock.calls[1]?.[0].context.tool_args).toEqual({})
+  })
+
+  it("aborts the source session when a blocking tool.before hook uses action: stop", async () => {
+    const { input, abort } = createMockPluginInput()
+    const executeBash = vi.fn(async ({ context }) => ({
+      command: "hook",
+      stdout: "",
+      stderr: `blocked:${context.event}`,
+      durationMs: 1,
+      exitCode: 2,
+      signal: null,
+      timedOut: false,
+      status: "blocked" as const,
+      blocking: true,
+    }))
+
+    const hooks: HookMap = new Map([
+      ["tool.before.write", [createHook("tool.before.write", { action: "stop", actions: [{ bash: "hook" }], source: { filePath: "a", index: 0 } })]],
+    ])
+
+    const runtime = createHooksRuntime(input as never, { hooks, executeBash })
+
+    await expect(
+      runtime["tool.execute.before"]?.(
+        { tool: "write", sessionID: "session-1", callID: "stop-call" },
+        { args: { filePath: "src/blocked.ts", value: "blocked" } },
+      ),
+    ).rejects.toThrow("blocked:tool.before.write")
+
+    expect(abort).toHaveBeenCalledWith({ path: { id: "session-1" } })
+  })
+
+  it("does not abort for non-blocking hook failures even when action: stop is set", async () => {
+    const { input, abort } = createMockPluginInput()
+    const executeBash = vi.fn(async () => ({
+      command: "hook",
+      stdout: "",
+      stderr: "failed-but-not-blocked",
+      durationMs: 1,
+      exitCode: 1,
+      signal: null,
+      timedOut: false,
+      status: "failed" as const,
+      blocking: false,
+    }))
+
+    const hooks: HookMap = new Map([
+      ["tool.before.write", [createHook("tool.before.write", { action: "stop", actions: [{ bash: "hook" }], source: { filePath: "a", index: 0 } })]],
+    ])
+
+    const runtime = createHooksRuntime(input as never, { hooks, executeBash })
+
+    await expect(
+      runtime["tool.execute.before"]?.(
+        { tool: "write", sessionID: "session-1", callID: "non-blocking-stop-call" },
+        { args: { filePath: "src/file.ts", value: "ok" } },
+      ),
+    ).resolves.toBeUndefined()
+
+    expect(abort).not.toHaveBeenCalled()
+  })
+
+  it("logs abort failures but still blocks the tool", async () => {
+    const { input, abort } = createMockPluginInput()
+    abort.mockRejectedValueOnce(new Error("abort failed"))
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+    const executeBash = vi.fn(async () => ({
+      command: "hook",
+      stdout: "",
+      stderr: "blocked:stop",
+      durationMs: 1,
+      exitCode: 2,
+      signal: null,
+      timedOut: false,
+      status: "blocked" as const,
+      blocking: true,
+    }))
+
+    const hooks: HookMap = new Map([
+      ["tool.before.write", [createHook("tool.before.write", { action: "stop", actions: [{ bash: "hook" }], source: { filePath: "a", index: 0 } })]],
+    ])
+
+    const runtime = createHooksRuntime(input as never, { hooks, executeBash })
+
+    await expect(
+      runtime["tool.execute.before"]?.(
+        { tool: "write", sessionID: "session-1", callID: "abort-failure-call" },
+        { args: { filePath: "src/file.ts", value: "blocked" } },
+      ),
+    ).rejects.toThrow("blocked:stop")
+
+    expect(errorSpy).toHaveBeenCalledWith("[opencode-hooks] Failed to abort session session-1: abort failed")
+    errorSpy.mockRestore()
   })
 
   it("serializes overlapping blocking tool.before hooks instead of bypassing queued enforcement", async () => {
