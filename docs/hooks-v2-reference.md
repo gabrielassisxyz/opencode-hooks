@@ -22,6 +22,7 @@ Only `hooks.yaml` is supported. `hooks.md` is ignored.
 hooks:
   - id: <optional-hook-id>
     event: <hook-event>
+    action: <stop>
     scope: <all|main|child>
     runIn: <current|main>
     async: <boolean>
@@ -38,6 +39,7 @@ Rules:
 - each item in `hooks` must be an object
 - normal hooks need a non-empty `actions` array
 - each action must define exactly one of `command`, `tool`, or `bash`
+- `action`, when present, must be `stop` and is only valid on `tool.before.*` and `tool.before.<name>` hooks
 - `id` is optional, but you need it if a later file should override or disable the hook
 - override entries also live inside `hooks`
 
@@ -81,6 +83,20 @@ Optional. Default: `all`.
 | `all` | Main and child sessions can trigger the hook |
 | `main` | Only the root session can trigger the hook |
 | `child` | Only child sessions can trigger the hook |
+
+### `action`
+
+Optional.
+
+The only supported value is `stop`.
+
+Use `action: stop` on a blocking pre-tool hook when you want the runtime to make a best-effort attempt to abort the active session after the hook blocks execution.
+
+Rules:
+
+- only supported on `tool.before.*` and `tool.before.<name>`
+- only meaningful when a `bash` action exits with code `2`
+- ignored for non-blocking hooks because only pre-tool bash hooks can block
 
 ### `runIn`
 
@@ -164,7 +180,7 @@ Common validation rules:
 - invalid or unreadable YAML is rejected
 - missing `hooks` is rejected
 - non-array `hooks` is rejected
-- unsupported `event`, `scope`, `runIn`, or condition values are rejected
+- unsupported `event`, `scope`, `runIn`, `action`, or condition values are rejected
 - invalid action shapes are rejected
 - duplicate `id` values inside one file are rejected
 - an override targeting an unknown id is rejected
