@@ -48,6 +48,45 @@ CWD="$(json_get cwd)"
 PROJECT_DIR="${OPENCODE_PROJECT_DIR:-${CWD:-}}"
 PROJECT_NAME="${PROJECT_DIR##*/}"
 
+detect_terminal_app() {
+  if [ -n "${OPENCODE_NOTIFY_OPEN_APP:-}" ]; then
+    printf '%s' "$OPENCODE_NOTIFY_OPEN_APP"
+    return
+  fi
+
+  case "${TERM_PROGRAM:-}" in
+    ghostty|Ghostty)
+      printf '%s' "Ghostty"
+      return
+      ;;
+    WarpTerminal|Warp|warp)
+      printf '%s' "Warp"
+      return
+      ;;
+    iTerm.app|iTerm2|iTerm|iterm2)
+      printf '%s' "iTerm"
+      return
+      ;;
+    Apple_Terminal)
+      printf '%s' "Terminal"
+      return
+      ;;
+    vscode)
+      printf '%s' "Visual Studio Code"
+      return
+      ;;
+  esac
+
+  if [ -n "${TERM:-}" ] && [ "${TERM#tmux}" != "$TERM" ]; then
+    case "${LC_TERMINAL:-}" in
+      iTerm2)
+        printf '%s' "iTerm"
+        return
+        ;;
+    esac
+  fi
+}
+
 BRANCH_NAME=""
 if command -v git >/dev/null 2>&1 && [ -n "$PROJECT_DIR" ]; then
   BRANCH_NAME="$(git -C "$PROJECT_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
@@ -87,13 +126,21 @@ for value in payload.get("files") or []:
 TITLE="${OPENCODE_NOTIFY_TITLE:-OpenCode Hook}"
 PROJECT_NAME="${OPENCODE_NOTIFY_PROJECT_NAME:-$PROJECT_NAME}"
 SUBTITLE="${OPENCODE_NOTIFY_SUBTITLE:-$SUBTITLE_DEFAULT}"
+OPEN_APP="$(detect_terminal_app)"
 
 MESSAGE="Session is idle"
 
 MESSAGE="${OPENCODE_NOTIFY_MESSAGE:-$MESSAGE}"
 
 send_terminal_notification() {
-  terminal-notifier -title "$TITLE" -subtitle "$SUBTITLE" -message "$MESSAGE" >/dev/null 2>>"$DEBUG_LOG"
+  local -a args
+  args=(-title "$TITLE" -subtitle "$SUBTITLE" -message "$MESSAGE")
+
+  if [ -n "$OPEN_APP" ]; then
+    args+=(-execute "open -a '$OPEN_APP'")
+  fi
+
+  terminal-notifier "${args[@]}" >/dev/null 2>>"$DEBUG_LOG"
 }
 
 send_macos_notification() {
@@ -121,7 +168,7 @@ send_linux_notification() {
 }
 
 if command -v terminal-notifier >/dev/null 2>&1; then
-  debug "sending terminal-notifier notification title=$TITLE subtitle=$SUBTITLE message=$MESSAGE"
+  debug "sending terminal-notifier notification title=$TITLE subtitle=$SUBTITLE message=$MESSAGE openApp=${OPEN_APP:-<none>}"
   if send_terminal_notification; then
     debug "terminal-notifier notification sent"
   else
