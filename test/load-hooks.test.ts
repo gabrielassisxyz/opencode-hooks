@@ -15,7 +15,7 @@ describe("parseHooksFile", () => {
     action: stop
     scope: main
     runIn: main
-    conditions: [matchesCodeFile]
+    conditions: [matchesCodeFiles]
     actions:
       - bash:
           command: npm test
@@ -143,7 +143,7 @@ describe("parseHooksFile", () => {
     actions:
       - bash: invalid-run-in
   - event: session.idle
-    conditions: [matchesCodeFiles]
+    conditions: [matchesCodeFile]
     actions:
       - bash: invalid-condition
   - event: tool.after.write
