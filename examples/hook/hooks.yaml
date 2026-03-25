@@ -103,6 +103,23 @@ hooks:
             exit 2
           fi
 
+  # Add action: stop when a blocked pre-tool hook should also abort the active
+  # session instead of only blocking the current tool call.
+  - id: block-and-stop-git-push
+    event: tool.before.bash
+    action: stop
+    actions:
+      - bash: |
+          payload=$(cat)
+          cmd=$(printf '%s' "$payload" | jq -r '.tool_args.command // empty')
+
+          case "$cmd" in
+            "git push"|git\ push\ *)
+              echo "Blocked and stopping session: git push is not allowed from OpenCode." >&2
+              exit 2
+              ;;
+          esac
+
   # Reusable hardcoded blocklist example. Edit BLOCKED_COMMANDS in the script to
   # control which bash commands are denied with a simple array like:
   #   BLOCKED_COMMANDS=(
