@@ -1,12 +1,18 @@
 # opencode-hooks
 
-Standalone OpenCode plugin that loads hook definitions from `hooks.yaml` files and runs command, tool, or bash actions on session and tool lifecycle events.
+`opencode-hooks` is an OpenCode plugin that loads hook definitions from `hooks.yaml` and runs command, tool, or bash actions on session and tool lifecycle events.
 
-## Installation
+Use it to run tests after edits, lint changed files, block risky commands before they run, or trigger local automation without another LLM step.
 
-### Install from npm
+## Install
 
-Add the package to the OpenCode plugin list in your `opencode.json`:
+Install the plugin from this repo with Bun:
+
+```bash
+bun add "https://github.com/KristjanPikhof/OpenCode-Hooks.git"
+```
+
+Then register it in your `opencode.json`:
 
 ```json
 {
@@ -15,25 +21,26 @@ Add the package to the OpenCode plugin list in your `opencode.json`:
 }
 ```
 
-Then install the package in the environment where OpenCode resolves plugins.
+OpenCode resolves the package by name, so the plugin entry stays `opencode-hooks` even when you install it from GitHub.
 
-### Install from local files
+## Quick start
 
-You can also place the plugin directory directly in a standard plugin discovery location:
+Create one of:
 
-- Project-local: `.opencode/plugin/opencode-hooks/`
-- Global: `~/.config/opencode/plugin/opencode-hooks/`
+- `~/.config/opencode/hook/hooks.yaml`
+- `<project>/.opencode/hook/hooks.yaml`
 
-The plugin entrypoint is `src/index.ts`, which exports the OpenCode `Plugin` implementation via `src/adapter/opencode.ts` and wires the runtime created by `createHooksRuntime(...)`.
+Then add a minimal hook:
 
-## Recommended documentation path
+```yaml
+hooks:
+  - event: file.changed
+    conditions: [hasCodeChange]
+    actions:
+      - bash: "npm test"
+```
 
-Read these in order:
-
-1. [`docs/hooks-v2-reference.md`](docs/hooks-v2-reference.md) for the current public config shape
-2. This branch loads `hooks.yaml`, not `hooks.md`, so use the reference above for migration-related behavior too
-3. [`examples/hooks.yaml`](examples/hooks.yaml) for copy-pasteable patterns
-4. [`docs/comparison-with-claude-code-hooks.md`](docs/comparison-with-claude-code-hooks.md) for how this compares to Claude Code's hook system
+This runs `npm test` after a supported file mutation tool changes at least one tracked code file.
 
 ## Current config locations
 
@@ -44,9 +51,9 @@ Hooks are merged from global and project locations.
 | macOS / Linux | `~/.config/opencode/hook/hooks.yaml` | `<project>/.opencode/hook/hooks.yaml` |
 | Windows | `~/.config/opencode/hook/hooks.yaml` preferred, otherwise `%APPDATA%/opencode/hook/hooks.yaml` | `<project>/.opencode/hook/hooks.yaml` |
 
-Important migration note: this branch loads `hooks.yaml`, not `hooks.md`.
+Important migration note: this runtime loads `hooks.yaml`, not `hooks.md`.
 
-## Recommended operator defaults
+## Start with these defaults
 
 Unless you need something more specific:
 
@@ -61,21 +68,6 @@ Explicit defaults in the current runtime:
 - `runIn` defaults to `current`
 - `conditions` are optional
 - bash `timeout` defaults to `60000` milliseconds
-
-## Minimal `hooks.yaml`
-
-Create one of:
-
-- `~/.config/opencode/hook/hooks.yaml`
-- `<project>/.opencode/hook/hooks.yaml`
-
-```yaml
-hooks:
-  - event: file.changed
-    conditions: [hasCodeChange]
-    actions:
-      - bash: "npm test"
-```
 
 ## Schema overview
 
@@ -295,6 +287,11 @@ See [`examples/hooks.yaml`](examples/hooks.yaml) for:
 - recommended `file.changed` automation
 - advanced `tool.after.*` observability
 - conservative atomic commit wiring
+
+## See also
+
+- [`docs/hooks-v2-reference.md`](docs/hooks-v2-reference.md) for the current public config shape
+- [`docs/comparison-with-claude-code-hooks.md`](docs/comparison-with-claude-code-hooks.md) for how this compares to Claude Code's hook system
 
 ## Known limitations
 
