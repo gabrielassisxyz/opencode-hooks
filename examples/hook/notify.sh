@@ -132,6 +132,8 @@ MESSAGE="Session is idle"
 
 MESSAGE="${OPENCODE_NOTIFY_MESSAGE:-$MESSAGE}"
 
+# terminal-notifier supports click actions; we use it to best-effort focus the
+# originating terminal app when the notification is clicked.
 send_terminal_notification() {
   local -a args
   args=(-title "$TITLE" -subtitle "$SUBTITLE" -message "$MESSAGE")
@@ -143,6 +145,8 @@ send_terminal_notification() {
   terminal-notifier "${args[@]}" >/dev/null 2>>"$DEBUG_LOG"
 }
 
+# AppleScript display notification is display-only here; it does not provide a
+# portable click handler for reopening the terminal app.
 send_macos_notification() {
   osascript - "$TITLE" "$MESSAGE" "$SUBTITLE" >/dev/null 2>>"$DEBUG_LOG" <<'APPLESCRIPT'
 on run argv
@@ -159,6 +163,8 @@ end run
 APPLESCRIPT
 }
 
+# Linux notify-send is used as a text-only fallback. Action/click behavior is
+# notification-server dependent and not handled here.
 send_linux_notification() {
   local body="$MESSAGE"
   if [ -n "$PROJECT_NAME" ]; then
