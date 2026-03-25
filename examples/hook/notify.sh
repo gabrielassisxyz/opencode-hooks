@@ -179,7 +179,27 @@ send_linux_notification() {
   notify-send "$TITLE" "$body" >/dev/null 2>&1
 }
 
-if command -v terminal-notifier >/dev/null 2>&1; then
+# cmux native notification — highest priority since cmux handles focus natively.
+# Detect via socket existence; prefer CLI for subtitle support.
+CMUX_SOCK="${CMUX_SOCKET_PATH:-/tmp/cmux.sock}"
+
+send_cmux_notification() {
+  local -a args
+  args=(notify --title "$TITLE" --body "$MESSAGE")
+  if [ -n "$SUBTITLE" ]; then
+    args+=(--subtitle "$SUBTITLE")
+  fi
+  cmux "${args[@]}" 2>>"$DEBUG_LOG"
+}
+
+if [ -S "$CMUX_SOCK" ] && command -v cmux >/dev/null 2>&1; then
+  debug "sending cmux notification title=$TITLE subtitle=$SUBTITLE message=$MESSAGE"
+  if send_cmux_notification; then
+    debug "cmux notification sent"
+  else
+    debug "cmux notification failed, falling through"
+  fi
+elif command -v terminal-notifier >/dev/null 2>&1; then
   debug "sending terminal-notifier notification title=$TITLE subtitle=$SUBTITLE message=$MESSAGE bundleId=${BUNDLE_ID:-<none>} openApp=${OPEN_APP:-<none>}"
   if send_terminal_notification; then
     debug "terminal-notifier notification sent"
