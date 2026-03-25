@@ -9,6 +9,10 @@ set -euo pipefail
 # Usage:
 #   hooks:
 #     - event: tool.before.bash
+#       # Add action: stop if a blocked command should also abort the active
+#       # OpenCode session instead of only blocking this bash tool call.
+#       # Without action: stop, exit 2 blocks only the current tool invocation.
+#       action: stop
 #       actions:
 #         - bash: "$HOME/.config/opencode/hook/block-commands.sh"
 #
@@ -16,6 +20,8 @@ set -euo pipefail
 # - The script reads the OpenCode hook JSON from stdin.
 # - It inspects .tool_args.command.
 # - Exit status 2 blocks the bash tool invocation.
+# - To stop the whole session too, pair this script with `action: stop` in
+#   hooks.yaml on the surrounding tool.before hook.
 
 DEBUG_LOG="${OPENCODE_BLOCK_COMMANDS_LOG:-/tmp/opencode-block-commands.log}"
 
