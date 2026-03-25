@@ -51,6 +51,16 @@ hooks:
     actions:
       - bash: "npm test"
 
+  # Desktop notification example for when the main session becomes idle.
+  # Useful as a lightweight signal that the agent finished a burst of work.
+  # Set OPENCODE_NOTIFY_DEBUG=1 while testing to write logs to
+  # /tmp/opencode-notify.log.
+  - id: notify-on-idle
+    event: session.idle
+    scope: main
+    actions:
+      - bash: "$HOME/.config/opencode/hook/notify.sh"
+
   # Minimal example showing that scope and runIn can be omitted.
   # This uses the defaults scope=all and runIn=current.
   - id: typecheck-on-change
