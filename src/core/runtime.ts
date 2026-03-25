@@ -423,12 +423,11 @@ async function dispatchHooks(
   }
 
   if (currentState.pending.length > 0) {
-    const drain = drainPendingRequests()
     if (!options.canBlock) {
-      await drain
+      await drainPendingRequests()
     } else {
       queueMicrotask(() => {
-        void drain
+        void drainPendingRequests()
       })
     }
   } else {
