@@ -423,7 +423,10 @@ async function dispatchHooks(
   }
 
   if (currentState.pending.length > 0) {
-    void drainPendingRequests()
+    const drain = drainPendingRequests()
+    if (!options.canBlock) {
+      await drain
+    }
   } else {
     currentState.active = false
     currentState.pending = []
