@@ -88,14 +88,10 @@ TITLE="${OPENCODE_NOTIFY_TITLE:-OpenCode Hook}"
 PROJECT_NAME="${OPENCODE_NOTIFY_PROJECT_NAME:-$PROJECT_NAME}"
 SUBTITLE="${OPENCODE_NOTIFY_SUBTITLE:-$SUBTITLE_DEFAULT}"
 
-if [ "$FILE_COUNT" = "0" ]; then
-  MESSAGE="No tracked file changes"
-elif [ "$FILE_COUNT" = "1" ] && [ -n "$FIRST_FILE" ]; then
-  MESSAGE="1 changed file: $FIRST_FILE"
-elif [ -n "$FIRST_FILE" ]; then
-  MESSAGE="$FILE_COUNT changed files · latest: $FIRST_FILE"
+if [ -n "$SESSION_ID" ]; then
+  MESSAGE="Session ${SESSION_ID} is idle"
 else
-  MESSAGE="$FILE_COUNT changed files"
+  MESSAGE="Session is idle"
 fi
 
 MESSAGE="${OPENCODE_NOTIFY_MESSAGE:-$MESSAGE}"
