@@ -417,33 +417,14 @@ async function dispatchHooks(
   let currentError: unknown
 
   try {
-    const queue: Array<DispatchRequest & { current?: boolean }> = [{ context, options, current: true }]
+    currentResult = await executeDispatchRequest({ context, options })
+  } catch (error) {
+    currentError = error
+  }
 
-    while (queue.length > 0) {
-      const request = queue.shift()!
-
-      try {
-        const result = await executeDispatchRequest(request)
-
-        if (request.current) {
-          currentResult = result
-        }
-
-        request.resolve?.(result)
-      } catch (error) {
-        if (request.current) {
-          currentError = error
-        }
-
-        request.reject?.(error)
-      }
-
-      if (currentState.pending.length > 0) {
-        queue.push(...currentState.pending)
-        currentState.pending = []
-      }
-    }
-  } finally {
+  if (currentState.pending.length > 0) {
+    void drainPendingRequests()
+  } else {
     currentState.active = false
     currentState.pending = []
     dispatchStates.delete(dispatchKey)
@@ -464,6 +445,25 @@ async function dispatchHooks(
     }
 
     return { blocked: false }
+  }
+
+  async function drainPendingRequests(): Promise<void> {
+    try {
+      while (currentState.pending.length > 0) {
+        const request = currentState.pending.shift()!
+
+        try {
+          const result = await executeDispatchRequest(request)
+          request.resolve?.(result)
+        } catch (error) {
+          request.reject?.(error)
+        }
+      }
+    } finally {
+      currentState.active = false
+      currentState.pending = []
+      dispatchStates.delete(dispatchKey)
+    }
   }
 }
 
