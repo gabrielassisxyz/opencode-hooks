@@ -1,16 +1,20 @@
 # Hooks v2 reference
 
-This is the operator reference for the current `hooks.yaml` schema implemented on this branch.
+Use `hooks.yaml` to run automation on OpenCode session and tool lifecycle events.
+
+If you only need one rule, start with `file.changed`. It is the cleanest hook for file-oriented workflows like linting, formatting, test selection, indexing, and atomic commits.
 
 ## Supported config files
 
-The runtime discovers these files:
+The runtime discovers hooks in this order:
 
-- `~/.config/opencode/hook/hooks.yaml`
-- `%APPDATA%/opencode/hook/hooks.yaml` on Windows when the preferred global file does not exist
-- `<project>/.opencode/hook/hooks.yaml`
+1. `~/.config/opencode/hook/hooks.yaml`
+2. `%APPDATA%/opencode/hook/hooks.yaml` on Windows, but only when the preferred global file does not exist
+3. `<project>/.opencode/hook/hooks.yaml`
 
-Global hooks load first. Project hooks load second. Matching hooks are combined.
+Global hooks load first. Project hooks load second.
+
+Only `hooks.yaml` is supported. `hooks.md` is ignored.
 
 ## Top-level shape
 
@@ -31,24 +35,24 @@ Rules:
 
 - `hooks` is required
 - `hooks` must be an array
-- each hook entry must be an object
-- `id` is optional, but required when another file needs to override or disable the hook
-- `actions` is required and must be non-empty for normal hooks
+- each item in `hooks` must be an object
+- normal hooks need a non-empty `actions` array
 - each action must define exactly one of `command`, `tool`, or `bash`
-- override entries also live inside `hooks`, target an existing hook `id`, and either replace that hook or disable it
+- `id` is optional, but you need it if a later file should override or disable the hook
+- override entries also live inside `hooks`
 
 ## Hook fields
 
 ### `id`
 
-Optional for normal hook definitions. Must be a non-empty string when present.
+Optional for normal hooks.
 
-Use `id` when you want a later config file to override or disable a hook from an earlier file.
+Use `id` when you want a later config file to replace or disable a hook from an earlier file.
 
 Rules:
 
-- ids must be unique within the same `hooks.yaml` file
-- override targets are matched by `id`
+- must be a non-empty string when present
+- must be unique within the same `hooks.yaml` file
 - hooks without an `id` cannot be targeted by overrides
 
 ### `event`
@@ -70,42 +74,46 @@ Supported values:
 
 Optional. Default: `all`.
 
-Controls which session can trigger the hook.
+`scope` controls which session can trigger the hook.
 
-- `all`: main and child sessions can trigger the hook
-- `main`: only the root session can trigger the hook
-- `child`: only child sessions can trigger the hook
+| Value | Meaning |
+|---|---|
+| `all` | Main and child sessions can trigger the hook |
+| `main` | Only the root session can trigger the hook |
+| `child` | Only child sessions can trigger the hook |
 
 ### `runIn`
 
 Optional. Default: `current`.
 
-Controls where command and tool actions run.
+`runIn` controls where `command` and `tool` actions execute.
 
-- `current`: run actions in the session that triggered the hook
-- `main`: run actions in the root session for that session tree
+| Value | Meaning |
+|---|---|
+| `current` | Run the action in the session that triggered the hook |
+| `main` | Run the action in the root session for that session tree |
 
 Notes:
 
-- `runIn` affects command and tool actions
-- bash actions run directly in the runtime process context and do not attach to another OpenCode session
+- `runIn` affects `command` and `tool` actions only
+- `bash` actions run in the plugin runtime process, not in another OpenCode session
 
 ### `async`
 
-Optional. Default: not set (synchronous).
+Optional. Default: synchronous.
 
-When `true`, the hook's actions execute in the background without blocking the tool pipeline. The hook returns immediately and actions run asynchronously.
+When `async: true`, the hook returns immediately and its actions run in the background.
 
 Rules:
 
 - must be a boolean when present
-- cannot be `true` on `tool.before.*` or `tool.before.<name>` events because blocking requires synchronous execution
-- cannot be `true` on `session.idle` events because idle dispatch must complete before tracked changes are consumed
-- async hooks must use only `bash` actions; `command` and `tool` actions have no timeout and can stall the async queue indefinitely
-- async actions for the same event and source session are serialized — rapid-fire tool calls produce a queue, not concurrent overlapping executions; serialization is per source session, not per resolved target (e.g. `runIn: main` hooks from different child sessions run independently)
-- multiple actions within one async hook still execute sequentially (e.g. `git add` before `git commit`)
-- errors from async hooks are logged but never thrown — they cannot crash the host process
-- async execution is best-effort: background work is not guaranteed to complete if the host process exits before the queue drains
+- cannot be `true` on `tool.before.*` or `tool.before.<name>` hooks
+- cannot be `true` on `session.idle`
+- async hooks must use only `bash` actions
+- actions inside one async hook still run sequentially
+- async work is serialized per event and source session, so rapid-fire triggers queue up instead of overlapping
+- async failures are logged, not thrown
+- async execution is best-effort, so work can be lost if the host process exits early
 
 ### `conditions`
 
@@ -119,20 +127,24 @@ All configured conditions must pass.
 
 ### `actions`
 
-Required for normal hooks and replacement overrides. Non-empty array.
+Required for normal hooks and replacement overrides.
 
-Supported action shapes are documented below.
+Rules:
+
+- must be an array
+- must be non-empty
+- each action must define exactly one of `command`, `tool`, or `bash`
 
 ### `override`
 
-Optional. Use this only on override entries inside `hooks`.
+Optional. Only use this on override entries.
 
 `override` must be a non-empty string containing the target hook id.
 
-Two override modes are supported:
+Supported modes:
 
-- replacement override: set `override: <target-id>` and provide a full replacement hook definition
-- disable override: set `override: <target-id>` and `disable: true`
+- replacement override: `override: <target-id>` plus a full replacement hook
+- disable override: `override: <target-id>` plus `disable: true`
 
 Replacement overrides must still define a valid hook, including `event` and a non-empty `actions` array.
 
@@ -142,6 +154,20 @@ Optional. Only meaningful together with `override`.
 
 - `disable: true` removes the targeted earlier hook
 - omitted or `false` means the override entry is treated as a replacement hook
+
+## Validation summary
+
+The loader rejects invalid entries and keeps the last valid config state active.
+
+Common validation rules:
+
+- invalid or unreadable YAML is rejected
+- missing `hooks` is rejected
+- non-array `hooks` is rejected
+- unsupported `event`, `scope`, `runIn`, or condition values are rejected
+- invalid action shapes are rejected
+- duplicate `id` values inside one file are rejected
+- an override targeting an unknown id is rejected
 
 ## Actions
 
@@ -165,10 +191,10 @@ actions:
 
 Behavior:
 
-- executes an OpenCode command
+- runs an OpenCode command
 - runs in the current session by default
 - uses the root session when `runIn: main`
-- failures are logged and do not block later actions
+- failures are logged and later actions still run
 
 ### `tool`
 
@@ -185,7 +211,7 @@ Behavior:
 - prompts the target session to use the named tool with the provided args
 - runs in the current session by default
 - uses the root session when `runIn: main`
-- failures are logged and do not block later actions
+- failures are logged and later actions still run
 
 ### `bash`
 
@@ -205,16 +231,12 @@ actions:
       timeout: 30000
 ```
 
-Defaults:
-
-- `timeout` is optional
-- if omitted, bash timeout defaults to `60000` milliseconds
-
 Behavior:
 
-- runs without another LLM step
-- stdin receives JSON context
-- environment includes OpenCode-specific variables
+- runs directly, without another LLM step
+- receives JSON context on stdin
+- inherits the current process environment plus OpenCode-specific variables
+- uses a default timeout of `60000` milliseconds when `timeout` is omitted
 
 ## Event reference
 
@@ -222,10 +244,11 @@ Behavior:
 
 Fires when OpenCode creates a session.
 
-Recommended use:
+Good uses:
 
-- welcome or bootstrap commands
-- root-session review flows with `scope: main`
+- bootstrap commands
+- logging session startup
+- root-session setup with `scope: main`
 
 Example:
 
@@ -242,7 +265,7 @@ hooks:
 
 Fires when OpenCode deletes a session.
 
-Recommended use:
+Good uses:
 
 - cleanup notifications
 - end-of-session logging
@@ -251,22 +274,24 @@ Recommended use:
 
 Fires when a session becomes idle.
 
-Behavior on this branch:
+Behavior:
 
-- receives accumulated tracked file changes for the current session
+- receives the accumulated tracked file changes for the current session
 - clears tracked changes only after successful dispatch
-- preserves tracked changes when dispatch fails
+- preserves tracked changes if dispatch fails
 
-Recommended use:
+Good uses:
 
 - batch checks after a burst of edits
-- non-blocking follow-up actions
+- deferred follow-up work
+
+Do not use `async: true` here. Idle dispatch needs to finish before tracked changes are consumed.
 
 ## `file.changed`
 
 Fires after a supported mutation tool reports file changes.
 
-This is the preferred public API for file-oriented automation.
+This is the recommended public API for file-oriented automation.
 
 Supported mutation tools:
 
@@ -276,7 +301,7 @@ Supported mutation tools:
 - `patch`
 - `apply_patch`
 
-Recommended use:
+Good uses:
 
 - linting and formatting
 - test selection
@@ -300,15 +325,17 @@ hooks:
 
 Fires before every tool execution.
 
-Recommended use:
+Good uses:
 
 - policy checks
-- logging
+- auditing
 - blocking invalid operations with a bash exit code of `2`
 
 ## `tool.before.<name>`
 
 Fires before one specific tool.
+
+Use this when you need a targeted policy check.
 
 Example:
 
@@ -329,9 +356,9 @@ hooks:
 
 Fires after every tool execution.
 
-This is an advanced hook. Prefer `file.changed` for file-oriented workflows.
+This is an advanced hook. Prefer `file.changed` when your workflow depends on changed files.
 
-Recommended use:
+Good uses:
 
 - observability
 - non-file tool auditing
@@ -340,38 +367,34 @@ Recommended use:
 
 Fires after one specific tool.
 
-This is also advanced. Use it when you need tool-specific post-processing that does not map cleanly to `file.changed`.
+This is also advanced. Use it for tool-specific post-processing that does not map cleanly to `file.changed`.
 
 ## Hook ordering
 
-For a tool named `write`, the runtime order is:
+For a tool named `write`, hooks run in this order:
 
 1. `tool.before.*`
 2. `tool.before.write`
 3. tool executes
-4. `file.changed` if tracked changes were detected
+4. `file.changed`, if tracked changes were detected
 5. `tool.after.*`
 6. `tool.after.write`
 
-## Override resolution rules
+## Override resolution
 
-Overrides are resolved while files are loaded in discovery order.
+Overrides are resolved while config files are loaded in discovery order.
 
-Current load order:
+What that means in practice:
 
-1. global hooks file
-2. project hooks file
-
-Resolution behavior implemented on this branch:
-
-- hooks from earlier files are loaded first
-- override entries in the current file can only target hooks that were already loaded from earlier files
+- earlier files load first
+- overrides in a later file can target hooks that were already loaded
 - the runtime resolves overrides before it appends normal hooks from the current file
 - a replacement override swaps the earlier hook in place
 - a disable override removes the earlier hook entirely
 - targeting an unknown id produces an `override_target_not_found` validation error
-- same-file overrides do not work because hooks declared later in the same file have not been loaded yet
-- project hooks can override global hooks, but global hooks cannot override project hooks
+- same-file overrides do not work
+- project hooks can override global hooks
+- global hooks cannot override project hooks
 
 Replacement example:
 
@@ -408,11 +431,11 @@ hooks:
     disable: true
 ```
 
-## Payload reference
+## Bash payload reference
 
-## Common bash payload fields
+Every `bash` action receives JSON on stdin.
 
-Every bash action receives JSON on stdin with these common fields:
+Common fields:
 
 ```json
 {
@@ -429,7 +452,7 @@ Possible additional fields:
 - `tool_name`
 - `tool_args`
 
-## `file.changed` payload
+### `file.changed` payload example
 
 ```json
 {
@@ -455,7 +478,7 @@ Change operations currently emitted:
 - `delete`
 - `rename`
 
-## Tool payload example
+### Tool payload example
 
 ```json
 {
@@ -469,29 +492,31 @@ Change operations currently emitted:
 }
 ```
 
-## Environment reference for bash actions
+## Bash environment
 
-Environment additions include:
+`bash` actions inherit the current process environment and also receive:
 
 - `OPENCODE_PROJECT_DIR`
 - `OPENCODE_WORKTREE_DIR`
 - `OPENCODE_SESSION_ID`
 - `OPENCODE_GIT_COMMON_DIR` when available
 
-The current process environment is otherwise inherited.
-
 ## Blocking semantics
 
-Only `tool.before.*` and `tool.before.<name>` bash hooks can block.
+Only `bash` actions on `tool.before.*` and `tool.before.<name>` can block execution.
 
-- exit code `0`: success
-- exit code `2`: blocking failure for `tool.before` bash hooks
-- any other non-zero exit code: logged, but non-blocking
-- timeout: logged, but non-blocking
+| Result | Meaning |
+|---|---|
+| exit code `0` | success |
+| exit code `2` | blocking failure for pre-tool bash hooks |
+| any other non-zero exit code | logged, but non-blocking |
+| timeout | logged, but non-blocking |
 
-## Recommended usage patterns
+If a blocking pre-tool hook also sets `action: stop`, the runtime makes a best-effort attempt to abort the active session.
 
-### Preferred: file-oriented automation
+## Recommended patterns
+
+### Prefer `file.changed` for file-oriented automation
 
 ```yaml
 hooks:
@@ -503,7 +528,7 @@ hooks:
       - bash: "$HOME/.config/opencode/hook/atomic-commit.sh"
 ```
 
-### Non-blocking async automation
+### Use `async: true` for best-effort background bash work
 
 ```yaml
 hooks:
@@ -516,9 +541,9 @@ hooks:
       - bash: "$HOME/.config/opencode/hook/atomic-commit.sh"
 ```
 
-The agent does not wait for the commit to finish. Rapid-fire edits are serialized — each commit runs after the previous one completes.
+The agent does not wait for the commit to finish. Rapid-fire edits queue up and run one at a time for the same event and source session.
 
-### Route child activity back to main
+### Route child activity back to the main session
 
 ```yaml
 hooks:
@@ -532,7 +557,7 @@ hooks:
           args: "main feature"
 ```
 
-### Advanced observability hook
+### Use `tool.after.*` only when `file.changed` is the wrong abstraction
 
 ```yaml
 hooks:
@@ -544,4 +569,4 @@ hooks:
           echo "advanced after hook for $(echo "$context" | jq -r '.tool_name')"
 ```
 
-Use low-level tool hooks when they are truly the right abstraction. Otherwise prefer `file.changed`.
+Use low-level tool hooks when you really need raw tool activity. Otherwise, stick with `file.changed`.
