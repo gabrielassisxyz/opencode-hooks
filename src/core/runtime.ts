@@ -1,5 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks"
-import { extname } from "node:path"
+import { extname, matchesGlob } from "node:path"
 
 import type { Hooks, PluginInput } from "@opencode-ai/plugin"
 
@@ -557,15 +557,47 @@ async function shouldRunHook(
     return false
   }
 
+  const changedPaths = getFinalChangedPaths(context)
+
   for (const condition of hook.conditions ?? []) {
     if (condition === "matchesCodeFiles") {
       if (!(context.files ?? []).some(hasCodeExtension)) {
         return false
       }
+
+      continue
+    }
+
+    if ("matchesAnyPath" in condition) {
+      if (changedPaths.length === 0) {
+        return false
+      }
+
+      if (!changedPaths.some((filePath) => condition.matchesAnyPath.some((pattern) => matchesGlob(filePath, pattern)))) {
+        return false
+      }
+
+      continue
+    }
+
+    if (changedPaths.length === 0) {
+      return false
+    }
+
+    if (!changedPaths.every((filePath) => condition.matchesAllPaths.some((pattern) => matchesGlob(filePath, pattern)))) {
+      return false
     }
   }
 
   return true
+}
+
+function getFinalChangedPaths(context: RuntimeActionContext): readonly string[] {
+  if (context.changes && context.changes.length > 0) {
+    return context.changes.map((change) => (change.operation === "rename" ? change.toPath : change.path))
+  }
+
+  return context.files ?? []
 }
 
 async function executeAction(

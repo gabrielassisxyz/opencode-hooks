@@ -268,6 +268,75 @@ describe("createHooksRuntime", () => {
     ])
   })
 
+  it("evaluates file.changed path conditions against final changed paths", async () => {
+    const { input } = createMockPluginInput()
+    const observedCommands: string[] = []
+    const executeBash = vi.fn(async ({ command }) => {
+      observedCommands.push(command)
+
+      return {
+        command,
+        stdout: "",
+        stderr: "",
+        durationMs: 1,
+        exitCode: 0,
+        signal: null,
+        timedOut: false,
+        status: "success" as const,
+        blocking: false,
+      }
+    })
+
+    const hooks: HookMap = new Map([
+      [["file.changed" as const][0], [
+        createHook("file.changed", {
+          conditions: [{ matchesAnyPath: ["src/**/*.ts"] }],
+          actions: [{ bash: "any-ts" }],
+          source: { filePath: "a", index: 0 },
+        }),
+        createHook("file.changed", {
+          conditions: [{ matchesAllPaths: ["src/**/*.ts", "package.json"] }],
+          actions: [{ bash: "all-final-paths" }],
+          source: { filePath: "a", index: 1 },
+        }),
+        createHook("file.changed", {
+          conditions: [{ matchesAllPaths: ["src/**/*.ts"] }],
+          actions: [{ bash: "all-ts-only" }],
+          source: { filePath: "a", index: 2 },
+        }),
+      ]],
+    ])
+
+    const runtime = createHooksRuntime(input as never, { hooks, executeBash })
+
+    await runtime["tool.execute.before"]?.(
+      { tool: "apply_patch", sessionID: "session-1", callID: "call-conditions" },
+      {
+        args: {
+          patchText: [
+            "*** Begin Patch",
+            "*** Update File: docs/old-name.md",
+            "*** Move to: src/renamed.ts",
+            "@@",
+            "-old",
+            "+new",
+            "*** Update File: package.json",
+            "@@",
+            "-old",
+            "+new",
+            "*** End Patch",
+          ].join("\n"),
+        },
+      },
+    )
+    await runtime["tool.execute.after"]?.(
+      { tool: "apply_patch", sessionID: "session-1", callID: "call-conditions", args: {} },
+      { title: "", output: "", metadata: {} },
+    )
+
+    expect(observedCommands).toEqual(["any-ts", "all-final-paths"])
+  })
+
   it("normalizes apply_patch diff payloads for file.changed and session.idle", async () => {
     const { input } = createMockPluginInput()
     const observedEvents: Array<{ event: string; files?: readonly string[]; changes?: readonly unknown[] }> = []
@@ -425,6 +494,82 @@ describe("createHooksRuntime", () => {
     await runtime.event?.({ event: { type: "session.idle", properties: { sessionID: "session-1" } } } as never)
 
     expect(idleContexts).toEqual([["src/write.ts", "src/edit.ts", "src/old.ts", "src/rename-me.ts", "src/renamed.ts", "src/new.ts"]])
+  })
+
+  it("evaluates session.idle any/all path conditions and rejects empty changed-file input", async () => {
+    const { input } = createMockPluginInput()
+    const observedCommands: string[] = []
+    const executeBash = vi.fn(async ({ command }) => {
+      observedCommands.push(command)
+
+      return {
+        command,
+        stdout: "",
+        stderr: "",
+        durationMs: 1,
+        exitCode: 0,
+        signal: null,
+        timedOut: false,
+        status: "success" as const,
+        blocking: false,
+      }
+    })
+
+    const hooks: HookMap = new Map([
+      [
+        "session.idle",
+        [
+          createHook("session.idle", {
+            conditions: [{ matchesAnyPath: ["src/**/*.ts"] }],
+            actions: [{ bash: "idle-any" }],
+            source: { filePath: "a", index: 0 },
+          }),
+          createHook("session.idle", {
+            conditions: [{ matchesAllPaths: ["src/**/*.ts", "package.json"] }],
+            actions: [{ bash: "idle-all" }],
+            source: { filePath: "a", index: 1 },
+          }),
+          createHook("session.idle", {
+            conditions: [{ matchesAllPaths: ["src/**/*.ts"] }],
+            actions: [{ bash: "idle-all-ts-only" }],
+            source: { filePath: "a", index: 2 },
+          }),
+        ],
+      ],
+    ])
+
+    const runtime = createHooksRuntime(input as never, { hooks, executeBash })
+
+    await runtime.event?.({ event: { type: "session.idle", properties: { sessionID: "session-1" } } } as never)
+    expect(observedCommands).toEqual([])
+
+    await runtime["tool.execute.before"]?.(
+      { tool: "apply_patch", sessionID: "session-1", callID: "call-idle-conditions" },
+      {
+        args: {
+          patchText: [
+            "*** Begin Patch",
+            "*** Update File: docs/old-name.md",
+            "*** Move to: src/renamed.ts",
+            "@@",
+            "-old",
+            "+new",
+            "*** Update File: package.json",
+            "@@",
+            "-old",
+            "+new",
+            "*** End Patch",
+          ].join("\n"),
+        },
+      },
+    )
+    await runtime["tool.execute.after"]?.(
+      { tool: "apply_patch", sessionID: "session-1", callID: "call-idle-conditions", args: {} },
+      { title: "", output: "", metadata: {} },
+    )
+    await runtime.event?.({ event: { type: "session.idle", properties: { sessionID: "session-1" } } } as never)
+
+    expect(observedCommands).toEqual(["idle-any", "idle-all"])
   })
 
   it("retains modified paths when session.idle dispatch fails and clears them after a later success", async () => {
