@@ -2,6 +2,7 @@ export const SESSION_HOOK_EVENTS = ["session.idle", "session.created", "session.
 export const HOOK_CONDITIONS = ["hasCodeChange"] as const
 export const HOOK_SCOPES = ["all", "main", "child"] as const
 export const HOOK_RUN_IN = ["current", "main"] as const
+export const HOOK_BEHAVIORS = ["stop"] as const
 
 export type SessionHookEvent = (typeof SESSION_HOOK_EVENTS)[number]
 export type ToolHookPhase = "before" | "after"
@@ -10,6 +11,7 @@ export type HookEvent = SessionHookEvent | ToolHookEvent
 export type HookCondition = (typeof HOOK_CONDITIONS)[number]
 export type HookScope = (typeof HOOK_SCOPES)[number]
 export type HookRunIn = (typeof HOOK_RUN_IN)[number]
+export type HookBehavior = (typeof HOOK_BEHAVIORS)[number]
 
 export interface CreateFileChange {
   readonly operation: "create"
@@ -71,6 +73,7 @@ export interface HookConfigSource {
 export interface HookConfig {
   readonly id?: string
   readonly event: HookEvent
+  readonly action?: HookBehavior
   readonly actions: HookAction[]
   readonly scope: HookScope
   readonly runIn: HookRunIn
@@ -96,6 +99,7 @@ export type HookValidationErrorCode =
   | "invalid_event"
   | "invalid_scope"
   | "invalid_run_in"
+  | "invalid_hook_action"
   | "invalid_conditions"
   | "invalid_actions"
   | "invalid_action"
@@ -131,4 +135,8 @@ export function isHookScope(value: unknown): value is HookScope {
 
 export function isHookRunIn(value: unknown): value is HookRunIn {
   return typeof value === "string" && HOOK_RUN_IN.includes(value as HookRunIn)
+}
+
+export function isHookBehavior(value: unknown): value is HookBehavior {
+  return typeof value === "string" && HOOK_BEHAVIORS.includes(value as HookBehavior)
 }
