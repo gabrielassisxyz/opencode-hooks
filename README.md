@@ -243,7 +243,7 @@ actions:
 
 If `timeout` is omitted, bash actions use the runtime default of `60000` milliseconds.
 
-`OPENCODE_PROJECT_DIR` remains the action cwd / project directory that triggered the hook. When the directory is inside a git worktree, the runtime also exposes `OPENCODE_WORKTREE_DIR` separately so repo-aware scripts can opt into the worktree root without changing local hook semantics.
+`OPENCODE_PROJECT_DIR` remains the action cwd / project directory that triggered the hook.
 
 ## Bash payloads
 
@@ -251,7 +251,6 @@ Every bash action receives:
 
 - inherited `process.env`
 - `OPENCODE_PROJECT_DIR` for the action cwd / project directory
-- `OPENCODE_WORKTREE_DIR` for the git worktree root when available
 - `OPENCODE_SESSION_ID`
 - `OPENCODE_GIT_COMMON_DIR` when available
 - JSON over stdin

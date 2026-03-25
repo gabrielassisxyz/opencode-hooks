@@ -564,7 +564,6 @@ Change operations currently emitted:
 `bash` actions inherit the current process environment and also receive:
 
 - `OPENCODE_PROJECT_DIR`
-- `OPENCODE_WORKTREE_DIR`
 - `OPENCODE_SESSION_ID`
 - `OPENCODE_GIT_COMMON_DIR` when available
 
