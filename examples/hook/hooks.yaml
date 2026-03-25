@@ -103,6 +103,13 @@ hooks:
             exit 2
           fi
 
+  # Reusable hardcoded blocklist example. Edit BLOCKED_PATTERNS in the script to
+  # control which bash commands are denied.
+  - id: block-bash-commands-from-script
+    event: tool.before.bash
+    actions:
+      - bash: "$HOME/.config/opencode/hook/block-commands.sh"
+
   - id: block-sensitive-writes
     event: tool.before.write
     actions:
