@@ -5,6 +5,9 @@ set -euo pipefail
 #
 # Designed as a simple, generic example with no Superset-specific behavior.
 # This version only reacts to session.idle events.
+# For the best macOS experience, install terminal-notifier:
+#   brew install terminal-notifier
+# The script falls back to osascript on macOS and notify-send on Linux.
 #
 # Usage:
 #   hooks:

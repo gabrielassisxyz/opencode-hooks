@@ -53,6 +53,8 @@ hooks:
 
   # Desktop notification example for when the main session becomes idle.
   # Useful as a lightweight signal that the agent finished a burst of work.
+  # On macOS, install terminal-notifier for clickable/focusable notifications:
+  #   brew install terminal-notifier
   # Set OPENCODE_NOTIFY_DEBUG=1 while testing to write logs to
   # /tmp/opencode-notify.log.
   - id: notify-on-idle
