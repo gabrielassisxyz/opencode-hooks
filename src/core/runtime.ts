@@ -129,6 +129,7 @@ interface RuntimeActionContext {
 interface HookExecutionResult {
   readonly blocked: boolean
   readonly blockReason?: string
+  readonly stopSession?: boolean
 }
 
 interface DispatchState {
@@ -221,6 +222,9 @@ export function createHooksRuntime(input: PluginInput, options: CreateHooksRunti
 
       if (result.blocked) {
         state.consumePendingToolCall(eventInput.callID)
+        if (result.stopSession) {
+          await abortSession(input, sessionID)
+        }
         throw new Error(result.blockReason ?? "Blocked by hook")
       }
     },
@@ -483,7 +487,7 @@ async function executeHook(
     return { blocked: false }
   }
 
-  if (hook.async) {
+    if (hook.async) {
     const queueKey = `${hook.event}:${sessionID}`
     const previous = asyncQueues.get(queueKey) ?? Promise.resolve()
     const next = previous.then(async () => {
@@ -513,20 +517,23 @@ async function executeHook(
   }
 
   for (const action of hook.actions) {
-      const result = await executeAction(
-        action,
-        hook.runIn,
-        input,
-        state,
-        runBashHook,
-        hook.event,
-        sessionID,
-        context,
-        hook.source.filePath,
-        actionRecursionGuards,
-      )
+    const result = await executeAction(
+      action,
+      hook.runIn,
+      input,
+      state,
+      runBashHook,
+      hook.event,
+      sessionID,
+      context,
+      hook.source.filePath,
+      actionRecursionGuards,
+    )
     if (result.blocked && options.canBlock) {
-      return result
+      return {
+        ...result,
+        ...(hook.action === "stop" ? { stopSession: true } : {}),
+      }
     }
   }
 
@@ -657,6 +664,17 @@ async function resolveActionSessionID(
     runIn === "main" ? await state.getRootSessionID(sessionID, (currentSessionID) => resolveParentSessionID(input, currentSessionID)) : sessionID
 
   return state.isDeleted(targetSessionID) ? undefined : targetSessionID
+}
+
+async function abortSession(input: PluginInput, sessionID: string): Promise<void> {
+  try {
+    await (input.client.session as PluginInput["client"]["session"] & {
+      abort: (request: { path: { id: string } }) => Promise<unknown>
+    }).abort({ path: { id: sessionID } })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    console.error(`[opencode-hooks] Failed to abort session ${sessionID}: ${message}`)
+  }
 }
 
 async function resolveParentSessionID(input: PluginInput, sessionID: string): Promise<string | null> {
