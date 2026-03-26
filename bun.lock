@@ -3,7 +3,7 @@
   "configVersion": 0,
   "workspaces": {
     "": {
-      "name": "opencode-hooks",
+      "name": "opencode-yaml-hooks",
       "dependencies": {
         "yaml": "^2.8.2",
       },

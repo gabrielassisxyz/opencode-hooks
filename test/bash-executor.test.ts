@@ -142,7 +142,7 @@ describe("executeBashHook", () => {
 
   it("reports spawn failures as non-blocking failed hooks", async () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
-    const missingDir = path.join(os.tmpdir(), `opencode-hooks-missing-${Date.now()}`)
+    const missingDir = path.join(os.tmpdir(), `opencode-yaml-hooks-missing-${Date.now()}`)
 
     const result = await executeBashHook({
       command: "pwd",

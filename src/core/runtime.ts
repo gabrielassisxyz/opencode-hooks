@@ -729,7 +729,7 @@ async function abortSession(input: PluginInput, sessionID: string): Promise<void
     }).abort({ path: { id: sessionID } })
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    console.error(`[opencode-hooks] Failed to abort session ${sessionID}: ${message}`)
+    console.error(`[opencode-yaml-hooks] Failed to abort session ${sessionID}: ${message}`)
   }
 }
 
@@ -747,12 +747,12 @@ function hasCodeExtension(filePath: string): boolean {
 
 function formatHookLoadErrors(errors: Array<{ filePath: string; message: string; path?: string }>): string {
   const details = errors.map((error) => `${error.filePath}${error.path ? `#${error.path}` : ""}: ${error.message}`)
-  return `[opencode-hooks] Failed to load some hooks; continuing with valid hooks:\n${details.join("\n")}`
+  return `[opencode-yaml-hooks] Failed to load some hooks; continuing with valid hooks:\n${details.join("\n")}`
 }
 
 function formatHookReloadErrors(errors: Array<{ filePath: string; message: string; path?: string }>): string {
   const details = errors.map((error) => `${error.filePath}${error.path ? `#${error.path}` : ""}: ${error.message}`)
-  return `[opencode-hooks] Failed to reload hooks.yaml; keeping last known good hooks:\n${details.join("\n")}`
+  return `[opencode-yaml-hooks] Failed to reload hooks.yaml; keeping last known good hooks:\n${details.join("\n")}`
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
@@ -776,7 +776,7 @@ function resolveToolArgs(
 
 function logHookFailure(event: HookEvent, filePath: string, error: unknown): void {
   const message = error instanceof Error ? error.message : String(error)
-  console.error(`[opencode-hooks] ${event} hook from ${filePath} failed: ${message}`)
+  console.error(`[opencode-yaml-hooks] ${event} hook from ${filePath} failed: ${message}`)
 }
 
 async function withActionRecursionGuard<T>(

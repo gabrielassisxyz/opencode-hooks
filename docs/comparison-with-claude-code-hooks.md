@@ -2,11 +2,11 @@
 
 This is a practical comparison, not a marketing page.
 
-If you are using OpenCode, use `opencode-hooks`. If you are using Claude Code, use Claude Code's built-in hooks. The useful question is how their hook models differ, especially if you are porting an existing workflow.
+If you are using OpenCode, use `opencode-yaml-hooks`. If you are using Claude Code, use Claude Code's built-in hooks. The useful question is how their hook models differ, especially if you are porting an existing workflow.
 
 ## TL;DR
 
-`opencode-hooks` is smaller and more opinionated.
+`opencode-yaml-hooks` is smaller and more opinionated.
 
 It gives you a YAML config, a focused event model, `bash` / `command` / `tool` actions, session-aware routing with `scope` and `runIn`, and a serialized async queue that is safer for stateful side effects.
 
@@ -14,7 +14,7 @@ Claude Code exposes a broader hook surface. This doc only treats Claude-side det
 
 ## High-level differences
 
-| Aspect | Claude Code | opencode-hooks |
+| Aspect | Claude Code | opencode-yaml-hooks |
 |---|---|---|
 | Host model | Built into the CLI | Runs as an OpenCode plugin |
 | Config format | Settings-based config | `hooks.yaml` |
@@ -25,9 +25,9 @@ Claude Code exposes a broader hook surface. This doc only treats Claude-side det
 | Async behavior | Has async hooks | Has async hooks, but serializes them per event and source session |
 | Overrides | Claude-specific config model | Later files can override or disable earlier hooks by `id` |
 
-## What opencode-hooks is optimized for
+## What opencode-yaml-hooks is optimized for
 
-`opencode-hooks` is built for local automation that needs to stay predictable.
+`opencode-yaml-hooks` is built for local automation that needs to stay predictable.
 
 That usually means things like:
 

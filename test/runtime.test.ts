@@ -991,7 +991,7 @@ describe("createHooksRuntime", () => {
       ),
     ).rejects.toThrow("blocked:stop")
 
-    expect(errorSpy).toHaveBeenCalledWith("[opencode-hooks] Failed to abort session session-1: abort failed")
+    expect(errorSpy).toHaveBeenCalledWith("[opencode-yaml-hooks] Failed to abort session session-1: abort failed")
     errorSpy.mockRestore()
   })
 
@@ -1332,7 +1332,7 @@ describe("createHooksRuntime", () => {
     ).resolves.toBeUndefined()
 
     expect(bashEvents).toEqual(["tool.after.write"])
-    expect(errorSpy).toHaveBeenCalledWith("[opencode-hooks] tool.after.write hook from a failed: root lookup failed")
+    expect(errorSpy).toHaveBeenCalledWith("[opencode-yaml-hooks] tool.after.write hook from a failed: root lookup failed")
     errorSpy.mockRestore()
   })
 
@@ -1538,7 +1538,7 @@ describe("createHooksRuntime", () => {
   })
 
   it("continues with valid discovered hooks when hooks.yaml contains invalid entries", async () => {
-    const projectDir = path.join(os.tmpdir(), `opencode-hooks-${Date.now()}-${Math.random().toString(16).slice(2)}`)
+    const projectDir = path.join(os.tmpdir(), `opencode-yaml-hooks-${Date.now()}-${Math.random().toString(16).slice(2)}`)
     mkdirSync(path.join(projectDir, ".opencode", "hook"), { recursive: true })
     writeFileSync(
       path.join(projectDir, ".opencode", "hook", "hooks.yaml"),
@@ -1577,7 +1577,7 @@ describe("createHooksRuntime", () => {
   })
 
   it("reloads hooks.yaml before new events after a valid edit", async () => {
-    const projectDir = path.join(os.tmpdir(), `opencode-hooks-${Date.now()}-${Math.random().toString(16).slice(2)}`)
+    const projectDir = path.join(os.tmpdir(), `opencode-yaml-hooks-${Date.now()}-${Math.random().toString(16).slice(2)}`)
     mkdirSync(path.join(projectDir, ".opencode", "hook"), { recursive: true })
 
     const writeHooks = (commandName: string) => {
@@ -1619,7 +1619,7 @@ describe("createHooksRuntime", () => {
   })
 
   it("keeps the last known good hooks when a reload edit is invalid and logs the validation error once", async () => {
-    const projectDir = path.join(os.tmpdir(), `opencode-hooks-${Date.now()}-${Math.random().toString(16).slice(2)}`)
+    const projectDir = path.join(os.tmpdir(), `opencode-yaml-hooks-${Date.now()}-${Math.random().toString(16).slice(2)}`)
     mkdirSync(path.join(projectDir, ".opencode", "hook"), { recursive: true })
     const hooksPath = path.join(projectDir, ".opencode", "hook", "hooks.yaml")
 

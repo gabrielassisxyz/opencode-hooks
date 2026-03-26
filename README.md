@@ -1,6 +1,6 @@
-# opencode-hooks
+# opencode-yaml-hooks
 
-`opencode-hooks` is an OpenCode plugin that loads hook definitions from `hooks.yaml` and runs command, tool, or bash actions on session and tool lifecycle events.
+`opencode-yaml-hooks` is an OpenCode plugin that loads hook definitions from `hooks.yaml` and runs command, tool, or bash actions on session and tool lifecycle events.
 
 Use it to run tests after edits, lint changed files, block risky commands before they run, or trigger local automation without another LLM step.
 
@@ -17,11 +17,11 @@ Then register it in your `opencode.json`:
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["opencode-hooks"]
+  "plugin": ["opencode-yaml-hooks"]
 }
 ```
 
-OpenCode resolves the package by name, so the plugin entry stays `opencode-hooks` even when you install it from GitHub.
+OpenCode resolves the package by name, so the plugin entry stays `opencode-yaml-hooks` even when you install it from GitHub.
 
 ## Quick start
 
