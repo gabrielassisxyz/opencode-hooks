@@ -1,4 +1,4 @@
-w#!/usr/bin/env bash
+#!/usr/bin/env bash
 set -euo pipefail
 
 # atomic-commit-async-api.sh — OpenCode hook for async atomic commits (direct API variant).
