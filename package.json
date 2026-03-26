@@ -1,7 +1,7 @@
 {
   "name": "opencode-hooks",
   "version": "2026.3.26",
-  "description": "Standalone OpenCode hooks runtime plugin scaffold.",
+  "description": "OpenCode plugin for running command, tool, and bash hooks from hooks.yaml during session and tool lifecycle events.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -24,8 +24,19 @@
     "opencode",
     "opencode-plugin",
     "hooks",
+    "automation",
+    "workflow",
+    "tooling",
     "plugin"
   ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/KristjanPikhof/OpenCode-Hooks.git"
+  },
+  "homepage": "https://github.com/KristjanPikhof/OpenCode-Hooks#readme",
+  "bugs": {
+    "url": "https://github.com/KristjanPikhof/OpenCode-Hooks/issues"
+  },
   "license": "MIT",
   "peerDependencies": {
     "@opencode-ai/plugin": "^1.2.27"
