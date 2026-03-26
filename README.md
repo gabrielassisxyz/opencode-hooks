@@ -6,7 +6,13 @@ Use it to run tests after edits, lint changed files, block risky commands before
 
 ## Install
 
-Install the plugin from this repo with Bun:
+Install from npm with Bun:
+
+```bash
+bun add opencode-yaml-hooks
+```
+
+Or install directly from this repo:
 
 ```bash
 bun add "https://github.com/KristjanPikhof/OpenCode-Hooks.git"
