@@ -1,6 +1,6 @@
 {
   "name": "opencode-yaml-hooks",
-  "version": "2026.3.26",
+  "version": "2026.3.29",
   "description": "OpenCode plugin for running command, tool, and bash hooks from hooks.yaml during session and tool lifecycle events.",
   "type": "module",
   "main": "dist/index.js",
