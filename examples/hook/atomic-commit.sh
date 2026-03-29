@@ -50,12 +50,16 @@ SYSTEM_PROMPT='You are a git commit message generator. Follow this format EXACTL
 
 Line 1: <imperative verb> <what changed> (max 50 chars, NO period)
 Line 2: blank
-Line 3+: <why/context, one bullet per line> (max 72 chars per line, prefix with "- ")
+Line 3+: <why/context as bullet points> (max 72 chars per line)
 
 Rules:
 - Line 1 MUST start with an imperative verb (Add, Fix, Refactor, Extract, Remove, Rename, Implement, Correct, Tighten, Wire, etc.)
 - Line 1 must describe WHAT changed semantically, not just the filename
 - Body explains WHY this change was made, not what lines changed
+- Use one bullet point per reason/context sentence
+- Start each new bullet point with "- "
+- Wrap body lines at 72 characters maximum
+- If a bullet point wraps, continuation lines must NOT start with "- "
 - NEVER use generic messages like "Update file", "WIP", "Fix stuff", "Modify code"
 - NEVER mention filenames in line 1 unless the change IS about the file itself (e.g. renaming it)
 - Output ONLY the commit message, nothing else — no markdown fences, no explanation'
@@ -133,10 +137,26 @@ if len(subject) > 50:
     subject = subject[:47].rstrip() + "..."
 
 body_inputs = []
+current_bullet = None
 for line in lines[1:]:
-    cleaned = re.sub(r'^[\-\*\s]+', '', line).strip()
-    if cleaned:
-        body_inputs.append(cleaned)
+    stripped = line.strip()
+    if not stripped:
+        continue
+
+    if re.match(r'^[\-\*]\s+', stripped):
+        cleaned = re.sub(r'^[\-\*\s]+', '', stripped).strip()
+        if cleaned:
+            if current_bullet:
+                body_inputs.append(current_bullet)
+            current_bullet = cleaned
+    else:
+        if current_bullet:
+            current_bullet = f"{current_bullet} {stripped}"
+        else:
+            current_bullet = stripped
+
+if current_bullet:
+    body_inputs.append(current_bullet)
 
 # Only add body bullets if the AI actually provided them
 if not body_inputs:
@@ -145,11 +165,17 @@ if not body_inputs:
 
 wrapped_bullets = []
 for bullet in body_inputs:
-    parts = textwrap.wrap(bullet, width=70, break_long_words=True, break_on_hyphens=False)
+    parts = textwrap.wrap(
+        bullet,
+        width=72,
+        initial_indent='- ',
+        subsequent_indent='',
+        break_long_words=True,
+        break_on_hyphens=False,
+    )
     if not parts:
         continue
-    for part in parts:
-        wrapped_bullets.append(f"- {part}")
+    wrapped_bullets.extend(parts)
 
 print(subject)
 if wrapped_bullets:
