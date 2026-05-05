@@ -17,6 +17,7 @@
   ],
   "scripts": {
     "build": "bun build src/index.ts --outfile dist/index.js --target bun --format esm && tsc -p tsconfig.json --emitDeclarationOnly",
+    "prepare": "bun run build",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run"
   },
