@@ -10,6 +10,9 @@ export interface BashHookContext {
   readonly changes?: readonly FileChange[]
   readonly tool_name?: string
   readonly tool_args?: Record<string, unknown>
+  readonly message_id?: string
+  readonly role?: "user" | "assistant"
+  readonly text?: string
 }
 
 export interface BashExecutionRequest {

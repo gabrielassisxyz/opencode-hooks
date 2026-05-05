@@ -13,6 +13,7 @@ interface SessionRecord {
    changeKeys: Set<string>
    activeIdleDispatchKeys?: Set<string>
    replayedDuringIdleKeys: Set<string>
+   userMessageIDs: Set<string>
 }
 
 export type SessionScope = "all" | "main" | "child"
@@ -63,6 +64,7 @@ export class SessionStateStore {
     record.changeKeys.clear()
     record.activeIdleDispatchKeys = undefined
     record.replayedDuringIdleKeys.clear()
+    record.userMessageIDs.clear()
 
     for (const [callID, pending] of this.pendingToolCalls) {
       if (pending.sessionID === sessionID) {
@@ -159,10 +161,18 @@ export class SessionStateStore {
     record.replayedDuringIdleKeys.clear()
   }
 
+  addUserMessage(sessionID: string, messageID: string): void {
+    this.getOrCreateSession(sessionID).userMessageIDs.add(messageID)
+  }
+
+  isUserMessage(sessionID: string, messageID: string): boolean {
+    return this.sessions.get(sessionID)?.userMessageIDs.has(messageID) ?? false
+  }
+
   private getOrCreateSession(sessionID: string): SessionRecord {
     let record = this.sessions.get(sessionID)
     if (!record) {
-      record = { deleted: false, changes: [], changeKeys: new Set(), replayedDuringIdleKeys: new Set() }
+      record = { deleted: false, changes: [], changeKeys: new Set(), replayedDuringIdleKeys: new Set(), userMessageIDs: new Set() }
       this.sessions.set(sessionID, record)
     }
     return record

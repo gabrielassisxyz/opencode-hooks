@@ -23,6 +23,7 @@ Claude Code exposes a broader hook surface. This doc only treats Claude-side det
 | File automation | Tool hooks | Prefer `file.changed` |
 | Session targeting | Claude-specific model | `scope` + `runIn` |
 | Async behavior | Has async hooks | Has async hooks, but serializes them per event and source session |
+| Message events | `UserPromptSubmit` | `message.part.updated` (fork enhancement) |
 | Overrides | Claude-specific config model | Later files can override or disable earlier hooks by `id` |
 
 ## What opencode-yaml-hooks is optimized for
@@ -47,6 +48,8 @@ The OpenCode plugin supports these hook events:
 - `session.deleted`
 - `session.idle`
 - `file.changed`
+- `message.updated`
+- `message.part.updated`
 - `tool.before.*`
 - `tool.before.<name>`
 - `tool.after.*`
@@ -57,6 +60,18 @@ That is a smaller surface than Claude Code. The tradeoff is simplicity.
 The most important difference is `file.changed`. Claude-style tool hooks tell you that a tool ran. `file.changed` tells you that a supported mutation tool actually reported file changes, and it gives you normalized `files` and `changes` metadata.
 
 For most file-oriented automation, that is the better abstraction.
+
+### Claude Code `UserPromptSubmit` mapping
+
+Claude Code provides a `UserPromptSubmit` hook that fires when a user submits a prompt. In this fork of `opencode-yaml-hooks`, the equivalent capability is provided by `message.part.updated`.
+
+| Claude Code | OpenCode (this fork) |
+|---|---|
+| `UserPromptSubmit` | `message.part.updated` |
+
+**How it works.** The runtime tracks user message IDs from `message.updated` events. When a `message.part.updated` event arrives, the plugin correlates it with the tracked message ID and enriches the payload with a `role` field so that hooks can distinguish user content from assistant content. The actual text of the prompt is delivered in the `text` field.
+
+This is a fork enhancement. Upstream OpenCode does not provide these message events, so this capability is only available when running this forked plugin.
 
 ## Config model
 
@@ -199,6 +214,7 @@ If you are moving a workflow from Claude Code to `opencode-hooks`, start here:
 | If your Claude hook does this | Start with this in opencode-hooks |
 |---|---|
 | Run shell automation after file edits | `file.changed` + `bash` |
+| Capture or log user prompts | `message.part.updated` + `bash` |
 | Block dangerous tool calls | `tool.before.<name>` + `bash` exit code `2` |
 | Observe all tool usage | `tool.after.*` + `bash` |
 | Run a follow-up command in the root session | `runIn: main` + `command` |

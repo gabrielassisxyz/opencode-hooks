@@ -1,4 +1,4 @@
-export const SESSION_HOOK_EVENTS = ["session.idle", "session.created", "session.deleted", "file.changed"] as const
+export const SESSION_HOOK_EVENTS = ["session.idle", "session.created", "session.deleted", "file.changed", "message.updated", "message.part.updated"] as const
 export const LEGACY_HOOK_CONDITIONS = ["matchesCodeFiles"] as const
 export const PATH_HOOK_CONDITION_KEYS = ["matchesAnyPath", "matchesAllPaths"] as const
 export const HOOK_SCOPES = ["all", "main", "child"] as const

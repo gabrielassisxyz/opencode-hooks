@@ -1973,4 +1973,202 @@ describe("createHooksRuntime", () => {
 
     expect(executeBash).toHaveBeenCalledTimes(2)
   })
+
+  it("message.updated with role=user adds messageID to state", async () => {
+    const { input } = createMockPluginInput()
+    const observedContexts: Array<{ event: string; message_id?: string; role?: string }> = []
+    const executeBash = vi.fn(async ({ context }) => {
+      observedContexts.push({
+        event: context.event,
+        message_id: context.message_id,
+        role: context.role,
+      })
+      return {
+        command: "hook",
+        stdout: "",
+        stderr: "",
+        durationMs: 1,
+        exitCode: 0,
+        signal: null,
+        timedOut: false,
+        status: "success" as const,
+        blocking: false,
+      }
+    })
+
+    const hooks: HookMap = new Map([
+      [["message.updated" as const][0], [createHook("message.updated", { actions: [{ bash: "hook" }], source: { filePath: "a", index: 0 } })]],
+      [["message.part.updated" as const][0], [createHook("message.part.updated", { actions: [{ bash: "hook" }], source: { filePath: "a", index: 1 } })]],
+    ])
+
+    const runtime = createHooksRuntime(input as never, { hooks, executeBash })
+
+    await runtime.event?.({ event: { type: "message.updated", properties: { sessionID: "session-1", messageID: "msg-1", role: "user" } } } as never)
+    await runtime.event?.({ event: { type: "message.part.updated", properties: { sessionID: "session-1", messageID: "msg-1", text: "hello" } } } as never)
+
+    expect(observedContexts).toEqual([
+      { event: "message.updated", message_id: "msg-1", role: "user" },
+      { event: "message.part.updated", message_id: "msg-1", role: "user" },
+    ])
+  })
+
+  it("message.updated with role=assistant does not add messageID to state", async () => {
+    const { input } = createMockPluginInput()
+    const observedContexts: Array<{ event: string; message_id?: string; role?: string }> = []
+    const executeBash = vi.fn(async ({ context }) => {
+      observedContexts.push({
+        event: context.event,
+        message_id: context.message_id,
+        role: context.role,
+      })
+      return {
+        command: "hook",
+        stdout: "",
+        stderr: "",
+        durationMs: 1,
+        exitCode: 0,
+        signal: null,
+        timedOut: false,
+        status: "success" as const,
+        blocking: false,
+      }
+    })
+
+    const hooks: HookMap = new Map([
+      [["message.updated" as const][0], [createHook("message.updated", { actions: [{ bash: "hook" }], source: { filePath: "a", index: 0 } })]],
+      [["message.part.updated" as const][0], [createHook("message.part.updated", { actions: [{ bash: "hook" }], source: { filePath: "a", index: 1 } })]],
+    ])
+
+    const runtime = createHooksRuntime(input as never, { hooks, executeBash })
+
+    await runtime.event?.({ event: { type: "message.updated", properties: { sessionID: "session-1", messageID: "msg-2", role: "assistant" } } } as never)
+    await runtime.event?.({ event: { type: "message.part.updated", properties: { sessionID: "session-1", messageID: "msg-2", text: "hi" } } } as never)
+
+    expect(observedContexts).toEqual([
+      { event: "message.updated", message_id: "msg-2", role: "assistant" },
+    ])
+  })
+
+  it("message.part.updated with a user messageID dispatches hook with enriched payload", async () => {
+    const { input } = createMockPluginInput()
+    const observedContexts: Array<{ event: string; message_id?: string; role?: string; text?: string }> = []
+    const executeBash = vi.fn(async ({ context }) => {
+      observedContexts.push({
+        event: context.event,
+        message_id: context.message_id,
+        role: context.role,
+        text: context.text,
+      })
+      return {
+        command: "hook",
+        stdout: "",
+        stderr: "",
+        durationMs: 1,
+        exitCode: 0,
+        signal: null,
+        timedOut: false,
+        status: "success" as const,
+        blocking: false,
+      }
+    })
+
+    const hooks: HookMap = new Map([
+      [["message.part.updated" as const][0], [createHook("message.part.updated", { actions: [{ bash: "hook" }], source: { filePath: "a", index: 0 } })]],
+    ])
+
+    const runtime = createHooksRuntime(input as never, { hooks, executeBash })
+
+    await runtime.event?.({ event: { type: "message.updated", properties: { sessionID: "session-1", messageID: "msg-user", role: "user" } } } as never)
+    await runtime.event?.({ event: { type: "message.part.updated", properties: { sessionID: "session-1", messageID: "msg-user", text: "user text" } } } as never)
+
+    expect(observedContexts).toEqual([
+      { event: "message.part.updated", message_id: "msg-user", role: "user", text: "user text" },
+    ])
+  })
+
+  it("message.part.updated with an assistant messageID does not dispatch hook", async () => {
+    const { input } = createMockPluginInput()
+    const executeBash = vi.fn(async () => ({
+      command: "hook",
+      stdout: "",
+      stderr: "",
+      durationMs: 1,
+      exitCode: 0,
+      signal: null,
+      timedOut: false,
+      status: "success" as const,
+      blocking: false,
+    }))
+
+    const hooks: HookMap = new Map([
+      [["message.part.updated" as const][0], [createHook("message.part.updated", { actions: [{ bash: "hook" }], source: { filePath: "a", index: 0 } })]],
+    ])
+
+    const runtime = createHooksRuntime(input as never, { hooks, executeBash })
+
+    await runtime.event?.({ event: { type: "message.updated", properties: { sessionID: "session-1", messageID: "msg-assist", role: "assistant" } } } as never)
+    await runtime.event?.({ event: { type: "message.part.updated", properties: { sessionID: "session-1", messageID: "msg-assist", text: "assist text" } } } as never)
+
+    expect(executeBash).not.toHaveBeenCalled()
+  })
+
+  it("rejects path conditions for message events", async () => {
+    const projectDir = path.join(os.tmpdir(), `opencode-yaml-hooks-${Date.now()}-${Math.random().toString(16).slice(2)}`)
+    mkdirSync(path.join(projectDir, ".opencode", "hook"), { recursive: true })
+    writeFileSync(
+      path.join(projectDir, ".opencode", "hook", "hooks.yaml"),
+      `hooks:
+  - event: message.updated
+    conditions:
+      - matchesAnyPath: src/**/*.ts
+    actions:
+      - bash: echo nope
+  - event: message.part.updated
+    conditions:
+      - matchesAllPaths:
+          - package.json
+    actions:
+      - bash: echo nope
+`,
+      "utf8",
+    )
+
+    const { input } = createMockPluginInput()
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+
+    createHooksRuntime({ ...(input as object), directory: projectDir } as never)
+
+    const logged = errorSpy.mock.calls[0]?.[0] as string
+    expect(logged).toContain("matchesAnyPath is only supported on file.changed and session.idle hooks")
+    expect(logged).toContain("matchesAllPaths is only supported on file.changed and session.idle hooks")
+    errorSpy.mockRestore()
+  })
+
+  it("rejects action: stop for message events", async () => {
+    const projectDir = path.join(os.tmpdir(), `opencode-yaml-hooks-${Date.now()}-${Math.random().toString(16).slice(2)}`)
+    mkdirSync(path.join(projectDir, ".opencode", "hook"), { recursive: true })
+    writeFileSync(
+      path.join(projectDir, ".opencode", "hook", "hooks.yaml"),
+      `hooks:
+  - event: message.updated
+    action: stop
+    actions:
+      - bash: echo nope
+  - event: message.part.updated
+    action: stop
+    actions:
+      - bash: echo nope
+`,
+      "utf8",
+    )
+
+    const { input } = createMockPluginInput()
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+
+    createHooksRuntime({ ...(input as object), directory: projectDir } as never)
+
+    const logged = errorSpy.mock.calls[0]?.[0] as string
+    expect(logged).toContain("action is only supported on tool.before.* events")
+    errorSpy.mockRestore()
+  })
 })

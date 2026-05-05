@@ -124,6 +124,9 @@ interface RuntimeActionContext {
   readonly toolArgs?: Record<string, unknown>
   readonly sourceSessionID?: string
   readonly targetSessionID?: string
+  readonly messageID?: string
+  readonly role?: string
+  readonly text?: string
 }
 
 interface HookExecutionResult {
@@ -318,6 +321,30 @@ export function createHooksRuntime(input: PluginInput, options: CreateHooksRunti
           state.cancelIdleDispatch(sessionID)
           throw error
         }
+      }
+
+      if (event.type === "message.updated") {
+        const sessionID = pickString(properties.sessionID)
+        const messageID = pickString(properties.messageID)
+        const role = pickString(properties.role)
+        if (sessionID && messageID && role === "user") {
+          state.addUserMessage(sessionID, messageID)
+        }
+
+        if (sessionID) {
+          await dispatchHooks(activeHooks, state, input, runBashHook, "message.updated", sessionID, { messageID, role }, {}, dispatchStates, actionRecursionGuards, asyncQueues)
+        }
+        return
+      }
+
+      if (event.type === "message.part.updated") {
+        const sessionID = pickString(properties.sessionID)
+        const messageID = pickString(properties.messageID)
+        const text = pickString(properties.text) ?? ""
+        if (sessionID && messageID && state.isUserMessage(sessionID, messageID)) {
+          await dispatchHooks(activeHooks, state, input, runBashHook, "message.part.updated", sessionID, { messageID, role: "user", text }, {}, dispatchStates, actionRecursionGuards, asyncQueues)
+        }
+        return
       }
     },
   }
@@ -700,6 +727,9 @@ async function executeAction(
       changes: context.changes,
       tool_name: context.toolName,
       tool_args: context.toolArgs,
+      message_id: context.messageID,
+      role: context.role as "user" | "assistant" | undefined,
+      text: context.text,
     },
   })
 

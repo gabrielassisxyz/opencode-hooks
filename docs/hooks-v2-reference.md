@@ -69,6 +69,8 @@ Supported values:
 - `session.deleted`
 - `session.idle`
 - `file.changed`
+- `message.updated`
+- `message.part.updated`
 - `tool.before.*`
 - `tool.before.<name>`
 - `tool.after.*`
@@ -386,6 +388,80 @@ hooks:
       - bash:
           command: "npm run lint -- --fix"
           timeout: 30000
+```
+
+## `message.updated`
+
+Fires when a message is created or updated in a session.
+
+Payload:
+
+```json
+{
+  "session_id": "abc123",
+  "event": "message.updated",
+  "message_id": "msg-456",
+  "role": "user"
+}
+```
+
+The `role` field indicates whether the message is from the `user` or the `assistant`.
+
+Good uses:
+
+- tracking message lifecycle
+- identifying user message IDs for later correlation
+
+Validation:
+
+- path conditions are not allowed
+- `action: stop` is not supported
+- `async: true` is allowed
+
+## `message.part.updated`
+
+Fires when a message part is streamed or updated.
+
+This is the practical event for capturing user prompts. Unlike `message.updated`, which fires when a message is created, `message.part.updated` carries the actual text content as it arrives.
+
+Payload:
+
+```json
+{
+  "session_id": "abc123",
+  "event": "message.part.updated",
+  "message_id": "msg-456",
+  "role": "user",
+  "text": "What is the capital of France?"
+}
+```
+
+The `role` field is inferred by the runtime. The plugin tracks user message IDs from `message.updated` events and enriches `message.part.updated` payloads so that the `role` field is present even when the upstream event does not include it directly.
+
+Good uses:
+
+- capturing user prompts for logging or observability
+- building homunculus-style prompt streams
+- real-time prompt analysis
+
+Validation:
+
+- path conditions are not allowed
+- `action: stop` is not supported
+- `async: true` is allowed
+
+Example (homunculus-style prompt capture):
+
+```yaml
+hooks:
+  - id: capture-user-prompt
+    event: message.part.updated
+    scope: main
+    actions:
+      - bash: |
+          payload=$(cat)
+          text=$(echo "$payload" | jq -r '.text // empty')
+          echo "{\"timestamp\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"type\":\"prompt\",\"prompt\":\"$text\"}" >> .opencode/homunculus/observations.jsonl
 ```
 
 ## `tool.before.*`
