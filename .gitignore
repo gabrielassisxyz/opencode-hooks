@@ -9,3 +9,4 @@
 
 # Tools
 /.superset/
+.worktrees/
