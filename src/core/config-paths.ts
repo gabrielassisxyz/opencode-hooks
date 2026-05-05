@@ -20,18 +20,19 @@ export function resolveHookConfigPaths(options: HookConfigDiscoveryOptions = {})
   const platform = options.platform ?? process.platform
   const homeDir = options.homeDir ?? os.homedir()
   const appDataDir = options.appDataDir ?? process.env.APPDATA
-  const globalConfigDir = path.join(homeDir, ".config", "opencode", "hook")
+  const globalConfigDir = path.join(homeDir, ".config", "opencode", "hooks")
+
   const projectDir = options.projectDir
 
   const preferredGlobal = path.join(globalConfigDir, "hooks.yaml")
 
   const appDataGlobal = platform === "win32" && appDataDir
-    ? path.join(appDataDir, "opencode", "hook", "hooks.yaml")
+    ? path.join(appDataDir, "opencode", "hooks", "hooks.yaml")
     : undefined
 
   return {
     global: platform === "win32" && appDataGlobal && !exists(preferredGlobal) ? appDataGlobal : preferredGlobal,
-    project: projectDir ? path.join(projectDir, ".opencode", "hook", "hooks.yaml") : undefined,
+    project: projectDir ? path.join(projectDir, ".opencode", "hooks", "hooks.yaml") : undefined,
   }
 }
 

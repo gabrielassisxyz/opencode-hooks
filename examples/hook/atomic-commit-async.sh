@@ -3,7 +3,7 @@ set -euo pipefail
 
 # atomic-commit-async.sh — OpenCode hook for async atomic commits.
 #
-# Designed for opencode-yaml-hooks plugin with async: true on file.changed.
+# Designed for opencode-hooks plugin with async: true on file.changed.
 # The runtime serializes async hooks per event+session, so this script 
 # does NOT need its own queue or lock — only one instance runs at a time.
 # Uses `opencode run ... --model ... --agent build` for commit messages when available.
@@ -16,7 +16,7 @@ set -euo pipefail
 #         scope: all
 #         conditions: [matchesCodeFiles]
 #         actions:
-#           - bash: "OPENCODE_ATOMIC_DEBUG=1  $HOME/.config/opencode/hook/atomic-commit-async.sh"
+#           - bash: "OPENCODE_ATOMIC_DEBUG=1  $HOME/.config/opencode/hooks/atomic-commit-async.sh"
 #
 #   CLI mode:
 #     atomic-commit-async.sh --each [directory] [--dry-run]

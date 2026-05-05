@@ -2,11 +2,11 @@
 
 This is a practical comparison, not a marketing page.
 
-If you are using OpenCode, use `opencode-yaml-hooks`. If you are using Claude Code, use Claude Code's built-in hooks. The useful question is how their hook models differ, especially if you are porting an existing workflow.
+If you are using OpenCode, use `opencode-hooks`. If you are using Claude Code, use Claude Code's built-in hooks. The useful question is how their hook models differ, especially if you are porting an existing workflow.
 
 ## TL;DR
 
-`opencode-yaml-hooks` is smaller and more opinionated.
+`opencode-hooks` is smaller and more opinionated.
 
 It gives you a YAML config, a focused event model, `bash` / `command` / `tool` actions, session-aware routing with `scope` and `runIn`, and a serialized async queue that is safer for stateful side effects.
 
@@ -14,7 +14,7 @@ Claude Code exposes a broader hook surface. This doc only treats Claude-side det
 
 ## High-level differences
 
-| Aspect | Claude Code | opencode-yaml-hooks |
+| Aspect | Claude Code | opencode-hooks |
 |---|---|---|
 | Host model | Built into the CLI | Runs as an OpenCode plugin |
 | Config format | Settings-based config | `hooks.yaml` |
@@ -26,9 +26,9 @@ Claude Code exposes a broader hook surface. This doc only treats Claude-side det
 | Message events | `UserPromptSubmit` | `message.part.updated` (fork enhancement) |
 | Overrides | Claude-specific config model | Later files can override or disable earlier hooks by `id` |
 
-## What opencode-yaml-hooks is optimized for
+## What opencode-hooks is optimized for
 
-`opencode-yaml-hooks` is built for local automation that needs to stay predictable.
+`opencode-hooks` is built for local automation that needs to stay predictable.
 
 That usually means things like:
 
@@ -63,15 +63,15 @@ For most file-oriented automation, that is the better abstraction.
 
 ### Claude Code `UserPromptSubmit` mapping
 
-Claude Code provides a `UserPromptSubmit` hook that fires when a user submits a prompt. In this fork of `opencode-yaml-hooks`, the equivalent capability is provided by `message.part.updated`.
+Claude Code provides a `UserPromptSubmit` hook that fires when a user submits a prompt. In `opencode-hooks`, the equivalent capability is provided by `message.part.updated`.
 
-| Claude Code | OpenCode (this fork) |
+| Claude Code | OpenCode (`opencode-hooks`) |
 |---|---|
 | `UserPromptSubmit` | `message.part.updated` |
 
 **How it works.** The runtime tracks user message IDs from `message.updated` events. When a `message.part.updated` event arrives, the plugin correlates it with the tracked message ID and enriches the payload with a `role` field so that hooks can distinguish user content from assistant content. The actual text of the prompt is delivered in the `text` field.
 
-This is a fork enhancement. Upstream OpenCode does not provide these message events, so this capability is only available when running this forked plugin.
+This is a downstream enhancement. Upstream OpenCode does not provide these message events, so this capability is only available when running this plugin.
 
 ## Config model
 

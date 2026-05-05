@@ -991,7 +991,7 @@ describe("createHooksRuntime", () => {
       ),
     ).rejects.toThrow("blocked:stop")
 
-    expect(errorSpy).toHaveBeenCalledWith("[opencode-yaml-hooks] Failed to abort session session-1: abort failed")
+    expect(errorSpy).toHaveBeenCalledWith("[opencode-hooks] Failed to abort session session-1: abort failed")
     errorSpy.mockRestore()
   })
 
@@ -1332,7 +1332,7 @@ describe("createHooksRuntime", () => {
     ).resolves.toBeUndefined()
 
     expect(bashEvents).toEqual(["tool.after.write"])
-    expect(errorSpy).toHaveBeenCalledWith("[opencode-yaml-hooks] tool.after.write hook from a failed: root lookup failed")
+    expect(errorSpy).toHaveBeenCalledWith("[opencode-hooks] tool.after.write hook from a failed: root lookup failed")
     errorSpy.mockRestore()
   })
 
@@ -1538,10 +1538,11 @@ describe("createHooksRuntime", () => {
   })
 
   it("continues with valid discovered hooks when hooks.yaml contains invalid entries", async () => {
-    const projectDir = path.join(os.tmpdir(), `opencode-yaml-hooks-${Date.now()}-${Math.random().toString(16).slice(2)}`)
-    mkdirSync(path.join(projectDir, ".opencode", "hook"), { recursive: true })
+    const projectDir = path.join(os.tmpdir(), `opencode-hooks-${Date.now()}-${Math.random().toString(16).slice(2)}`)
+    const homeDir = path.join(os.tmpdir(), `opencode-hooks-home-${Date.now()}-${Math.random().toString(16).slice(2)}`)
+    mkdirSync(path.join(projectDir, ".opencode", "hooks"), { recursive: true })
     writeFileSync(
-      path.join(projectDir, ".opencode", "hook", "hooks.yaml"),
+      path.join(projectDir, ".opencode", "hooks", "hooks.yaml"),
       `hooks:
   - event: nope
     actions:
@@ -1567,7 +1568,7 @@ describe("createHooksRuntime", () => {
     }))
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
 
-    const runtime = createHooksRuntime({ ...(input as object), directory: projectDir } as never, { executeBash })
+    const runtime = createHooksRuntime({ ...(input as object), directory: projectDir } as never, { executeBash, homeDir })
 
     await runtime.event?.({ event: { type: "session.created", properties: { info: { id: "session-1" } } } } as never)
 
@@ -1577,12 +1578,13 @@ describe("createHooksRuntime", () => {
   })
 
   it("reloads hooks.yaml before new events after a valid edit", async () => {
-    const projectDir = path.join(os.tmpdir(), `opencode-yaml-hooks-${Date.now()}-${Math.random().toString(16).slice(2)}`)
-    mkdirSync(path.join(projectDir, ".opencode", "hook"), { recursive: true })
+    const projectDir = path.join(os.tmpdir(), `opencode-hooks-${Date.now()}-${Math.random().toString(16).slice(2)}`)
+    const homeDir = path.join(os.tmpdir(), `opencode-hooks-home-${Date.now()}-${Math.random().toString(16).slice(2)}`)
+    mkdirSync(path.join(projectDir, ".opencode", "hooks"), { recursive: true })
 
     const writeHooks = (commandName: string) => {
       writeFileSync(
-        path.join(projectDir, ".opencode", "hook", "hooks.yaml"),
+        path.join(projectDir, ".opencode", "hooks", "hooks.yaml"),
         `hooks:
   - event: session.created
     actions:
@@ -1607,7 +1609,7 @@ describe("createHooksRuntime", () => {
       blocking: false,
     }))
 
-    const runtime = createHooksRuntime({ ...(input as object), directory: projectDir } as never, { executeBash })
+    const runtime = createHooksRuntime({ ...(input as object), directory: projectDir } as never, { executeBash, homeDir })
 
     await runtime.event?.({ event: { type: "session.created", properties: { info: { id: "session-1" } } } } as never)
 
@@ -1619,9 +1621,10 @@ describe("createHooksRuntime", () => {
   })
 
   it("keeps the last known good hooks when a reload edit is invalid and logs the validation error once", async () => {
-    const projectDir = path.join(os.tmpdir(), `opencode-yaml-hooks-${Date.now()}-${Math.random().toString(16).slice(2)}`)
-    mkdirSync(path.join(projectDir, ".opencode", "hook"), { recursive: true })
-    const hooksPath = path.join(projectDir, ".opencode", "hook", "hooks.yaml")
+    const projectDir = path.join(os.tmpdir(), `opencode-hooks-${Date.now()}-${Math.random().toString(16).slice(2)}`)
+    const homeDir = path.join(os.tmpdir(), `opencode-hooks-home-${Date.now()}-${Math.random().toString(16).slice(2)}`)
+    mkdirSync(path.join(projectDir, ".opencode", "hooks"), { recursive: true })
+    const hooksPath = path.join(projectDir, ".opencode", "hooks", "hooks.yaml")
 
     const { input } = createMockPluginInput()
     const executeBash = vi.fn(async ({ command }) => ({
@@ -1647,7 +1650,7 @@ describe("createHooksRuntime", () => {
       "utf8",
     )
 
-    const runtime = createHooksRuntime({ ...(input as object), directory: projectDir } as never, { executeBash })
+    const runtime = createHooksRuntime({ ...(input as object), directory: projectDir } as never, { executeBash, homeDir })
 
     await runtime.event?.({ event: { type: "session.created", properties: { info: { id: "session-1" } } } } as never)
 
@@ -2113,10 +2116,10 @@ describe("createHooksRuntime", () => {
   })
 
   it("rejects path conditions for message events", async () => {
-    const projectDir = path.join(os.tmpdir(), `opencode-yaml-hooks-${Date.now()}-${Math.random().toString(16).slice(2)}`)
-    mkdirSync(path.join(projectDir, ".opencode", "hook"), { recursive: true })
+    const projectDir = path.join(os.tmpdir(), `opencode-hooks-${Date.now()}-${Math.random().toString(16).slice(2)}`)
+    mkdirSync(path.join(projectDir, ".opencode", "hooks"), { recursive: true })
     writeFileSync(
-      path.join(projectDir, ".opencode", "hook", "hooks.yaml"),
+      path.join(projectDir, ".opencode", "hooks", "hooks.yaml"),
       `hooks:
   - event: message.updated
     conditions:
@@ -2145,10 +2148,10 @@ describe("createHooksRuntime", () => {
   })
 
   it("rejects action: stop for message events", async () => {
-    const projectDir = path.join(os.tmpdir(), `opencode-yaml-hooks-${Date.now()}-${Math.random().toString(16).slice(2)}`)
-    mkdirSync(path.join(projectDir, ".opencode", "hook"), { recursive: true })
+    const projectDir = path.join(os.tmpdir(), `opencode-hooks-${Date.now()}-${Math.random().toString(16).slice(2)}`)
+    mkdirSync(path.join(projectDir, ".opencode", "hooks"), { recursive: true })
     writeFileSync(
-      path.join(projectDir, ".opencode", "hook", "hooks.yaml"),
+      path.join(projectDir, ".opencode", "hooks", "hooks.yaml"),
       `hooks:
   - event: message.updated
     action: stop

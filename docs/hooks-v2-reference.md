@@ -8,9 +8,9 @@ If you only need one rule, start with `file.changed`. It is the cleanest hook fo
 
 The runtime discovers hooks in this order:
 
-1. `~/.config/opencode/hook/hooks.yaml`
-2. `%APPDATA%/opencode/hook/hooks.yaml` on Windows, but only when the preferred global file does not exist
-3. `<project>/.opencode/hook/hooks.yaml`
+1. `~/.config/opencode/hooks/hooks.yaml`
+2. `%APPDATA%/opencode/hooks/hooks.yaml` on Windows, but only when the preferred global file does not exist
+3. `<project>/.opencode/hooks/hooks.yaml`
 
 Global hooks load first. Project hooks load second.
 
@@ -671,7 +671,7 @@ hooks:
           - src/**/*.{ts,tsx,js,jsx}
           - package.json
     actions:
-      - bash: "$HOME/.config/opencode/hook/atomic-commit.sh"
+      - bash: "$HOME/.config/opencode/hooks/atomic-commit.sh"
 ```
 
 ### Use `async: true` for best-effort background bash work
@@ -684,7 +684,7 @@ hooks:
     scope: main
     conditions: [matchesCodeFiles]
     actions:
-      - bash: "$HOME/.config/opencode/hook/atomic-commit.sh"
+      - bash: "$HOME/.config/opencode/hooks/atomic-commit.sh"
 ```
 
 The agent does not wait for the commit to finish. Rapid-fire edits queue up and run one at a time for the same event and source session.

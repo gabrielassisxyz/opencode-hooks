@@ -151,7 +151,7 @@ function logBashOutcome(result: BashHookResult, request: BashExecutionRequest): 
   }
 
   const details = [
-    `[opencode-yaml-hooks] Bash hook ${result.status}`,
+    `[opencode-hooks] Bash hook ${result.status}`,
     `event=${request.context.event}`,
     `session=${request.context.session_id}`,
     `cwd=${request.context.cwd}`,

@@ -9,7 +9,7 @@ set -euo pipefail
 #     reported by the runtime for supported mutation tools:
 #       - event: file.changed
 #         actions:
-#           - bash: "$HOME/.config/opencode/hook/atomic-commit.sh"
+#           - bash: "$HOME/.config/opencode/hooks/atomic-commit.sh"
 #
 #   CLI mode:
 #     atomic-commit.sh --each [directory] [--dry-run]

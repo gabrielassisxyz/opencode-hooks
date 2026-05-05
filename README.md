@@ -1,6 +1,6 @@
-# opencode-yaml-hooks
+# opencode-hooks
 
-`opencode-yaml-hooks` is an OpenCode plugin that loads hook definitions from `hooks.yaml` and runs command, tool, or bash actions on session and tool lifecycle events.
+`opencode-hooks` is an OpenCode plugin that loads hook definitions from `hooks.yaml` and runs command, tool, or bash actions on session and tool lifecycle events.
 
 Use it to run tests after edits, lint changed files, block risky commands before they run, or trigger local automation without another LLM step.
 
@@ -9,13 +9,13 @@ Use it to run tests after edits, lint changed files, block risky commands before
 Install from npm with Bun:
 
 ```bash
-bun add opencode-yaml-hooks
+bun add @gabrielassisxyz/opencode-hooks
 ```
 
 Or install directly from this repo:
 
 ```bash
-bun add "https://github.com/KristjanPikhof/OpenCode-Hooks.git"
+bun add "https://github.com/gabrielassisxyz/opencode-hooks.git"
 ```
 
 Then register it in your `opencode.json`:
@@ -23,18 +23,18 @@ Then register it in your `opencode.json`:
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["opencode-yaml-hooks"]
+  "plugin": ["@gabrielassisxyz/opencode-hooks"]
 }
 ```
 
-OpenCode resolves the package by name, so the plugin entry stays `opencode-yaml-hooks` even when you install it from GitHub.
+OpenCode resolves the package by name, so the plugin entry stays `@gabrielassisxyz/opencode-hooks` even when you install it from GitHub.
 
 ## Quick start
 
 Create one of:
 
-- `~/.config/opencode/hook/hooks.yaml`
-- `<project>/.opencode/hook/hooks.yaml`
+- `~/.config/opencode/hooks/hooks.yaml`
+- `<project>/.opencode/hooks/hooks.yaml`
 
 Then add a minimal hook:
 
@@ -54,8 +54,8 @@ Hooks are merged from global and project locations.
 
 | Platform | Global config | Project config |
 |---|---|---|
-| macOS / Linux | `~/.config/opencode/hook/hooks.yaml` | `<project>/.opencode/hook/hooks.yaml` |
-| Windows | `~/.config/opencode/hook/hooks.yaml` preferred, otherwise `%APPDATA%/opencode/hook/hooks.yaml` | `<project>/.opencode/hook/hooks.yaml` |
+| macOS / Linux | `~/.config/opencode/hooks/hooks.yaml` | `<project>/.opencode/hooks/hooks.yaml` |
+| Windows | `~/.config/opencode/hooks/hooks.yaml` preferred, otherwise `%APPDATA%/opencode/hooks/hooks.yaml` | `<project>/.opencode/hooks/hooks.yaml` |
 
 ## Start with these defaults
 

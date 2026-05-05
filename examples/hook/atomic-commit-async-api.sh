@@ -26,7 +26,7 @@ set -euo pipefail
 #         scope: all
 #         conditions: [matchesCodeFiles]
 #         actions:
-#           - bash: "OPENCODE_ATOMIC_DEBUG=1  $HOME/.config/opencode/hook/atomic-commit-async-api.sh"
+#           - bash: "OPENCODE_ATOMIC_DEBUG=1  $HOME/.config/opencode/hooks/atomic-commit-async-api.sh"
 #
 #   CLI mode:
 #     atomic-commit-async-api.sh --each [directory] [--dry-run]

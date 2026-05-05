@@ -14,7 +14,7 @@ set -euo pipefail
 #       # Without action: stop, exit 2 blocks only the current tool invocation.
 #       action: stop
 #       actions:
-#         - bash: "$HOME/.config/opencode/hook/block-commands.sh"
+#         - bash: "$HOME/.config/opencode/hooks/block-commands.sh"
 #
 # Notes:
 # - The script reads the OpenCode hook JSON from stdin.

@@ -14,7 +14,7 @@ set -euo pipefail
 #     - event: session.idle
 #       scope: main
 #       actions:
-#         - bash: "$HOME/.config/opencode/hook/notify.sh"
+#         - bash: "$HOME/.config/opencode/hooks/notify.sh"
 
 INPUT="$(cat 2>/dev/null || true)"
 [ -z "$INPUT" ] && exit 0

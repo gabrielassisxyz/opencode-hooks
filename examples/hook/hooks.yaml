@@ -1,7 +1,7 @@
 # Example hook configuration for operators.
 # Copy the parts you want into either:
-# - ~/.config/opencode/hook/hooks.yaml
-# - <project>/.opencode/hook/hooks.yaml
+# - ~/.config/opencode/hooks/hooks.yaml
+# - <project>/.opencode/hooks/hooks.yaml
 #
 # Current defaults in the runtime:
 # - scope defaults to all
@@ -76,7 +76,7 @@ hooks:
     event: session.idle
     scope: main
     actions:
-      - bash: "$HOME/.config/opencode/hook/notify.sh"
+      - bash: "$HOME/.config/opencode/hooks/notify.sh"
 
   # Minimal example showing that scope and runIn can be omitted.
   # This uses the defaults scope=all and runIn=current.
@@ -144,7 +144,7 @@ hooks:
   - id: block-bash-commands-from-script
     event: tool.before.bash
     actions:
-      - bash: "$HOME/.config/opencode/hook/block-commands.sh"
+      - bash: "$HOME/.config/opencode/hooks/block-commands.sh"
 
   - id: block-sensitive-writes
     event: tool.before.write
@@ -173,7 +173,7 @@ hooks:
     scope: main
     conditions: [matchesCodeFiles]
     actions:
-      - bash: "$HOME/.config/opencode/hook/atomic-commit.sh"
+      - bash: "$HOME/.config/opencode/hooks/atomic-commit.sh"
 
   # async: true makes the hook return immediately without blocking the agent.
   # Use this for side-effect work that doesn't need to complete before the
@@ -186,9 +186,9 @@ hooks:
     scope: main
     conditions: [matchesCodeFiles]
     actions:
-      - bash: "$HOME/.config/opencode/hook/atomic-commit-async.sh"
+      - bash: "$HOME/.config/opencode/hooks/atomic-commit-async.sh"
 
-# Override examples belong in a later file, such as <project>/.opencode/hook/hooks.yaml,
+# Override examples belong in a later file, such as <project>/.opencode/hooks/hooks.yaml,
 # so they can target ids that were already loaded from an earlier global file.
 #
 # hooks:
