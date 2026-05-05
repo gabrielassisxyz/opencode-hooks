@@ -2,7 +2,7 @@
 /.trekoon/
 
 # Build output
-# /dist/  -- committed for git-based installs
+/dist/
 
 # Dependencies
 /node_modules/

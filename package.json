@@ -3,16 +3,9 @@
   "version": "2026.3.29",
   "description": "OpenCode plugin for running command, tool, and bash hooks from hooks.yaml during session and tool lifecycle events.",
   "type": "module",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
-    }
-  },
+  "main": "src/index.ts",
   "files": [
-    "dist",
+    "src/",
     "README.md"
   ],
   "scripts": {
@@ -39,16 +32,14 @@
     "url": "https://github.com/KristjanPikhof/OpenCode-Hooks/issues"
   },
   "license": "MIT",
-  "peerDependencies": {
-    "@opencode-ai/plugin": "^1.2.27"
+  "dependencies": {
+    "@opencode-ai/plugin": "latest",
+    "yaml": "^2.8.2"
   },
   "devDependencies": {
-    "@opencode-ai/plugin": "1.2.27",
     "@types/node": "^25.5.0",
+    "bun-types": "latest",
     "typescript": "^5.9.3",
     "vitest": "^4.0.17"
-  },
-  "dependencies": {
-    "yaml": "^2.8.2"
   }
 }
